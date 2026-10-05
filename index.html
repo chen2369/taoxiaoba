@@ -239,6 +239,10 @@ button, input, select { font: inherit; color: inherit; }
 .stopcard .pp-routes { max-height: none; overflow: visible; }
 .sc-close { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
 .sc-close:hover { background: var(--bg); }
+.nearbtn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--go); background: var(--go); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
+.nearbtn:hover { filter: brightness(1.08); }
+.near-acts { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px; }
+.linkbtn { border: 0; background: none; padding: 2px 0; color: var(--back); font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .grab { display: none; flex: none; height: 22px; align-items: center; justify-content: center; touch-action: none; cursor: grab; }
 .grab span { width: 40px; height: 5px; border-radius: 3px; background: var(--hair); }
 /* Phones: the map fills the screen and the panel is a bottom sheet with three heights (peek / half / full). */
@@ -279,6 +283,7 @@ button, input, select { font: inherit; color: inherit; }
         <button class="chip" id="cat-F" data-cat="F" aria-pressed="false"><i></i>復興幸福巴士 <span></span></button>
       </div>
       <div class="row">
+        <button class="nearbtn" id="near-btn"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.6A2.6 2.6 0 1 1 12 6.4a2.6 2.6 0 0 1 0 5.2z"/></svg>附近站牌</button>
         <select id="town" aria-label="行政區"><option value="">全部行政區</option></select>
       </div>
     </div>
@@ -351,7 +356,7 @@ button, input, select { font: inherit; color: inherit; }
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
-  const state = { cats: { T: true, O: true, F: false }, town: '', q: '', sel: null, dir: 0, day: todayType, fallback: false };
+  const state = { cats: { T: true, O: true, F: false }, town: '', q: '', sel: null, dir: 0, day: todayType, fallback: false, near: null };
   try {
     const saved = JSON.parse(localStorage.getItem('tsb-filters') || 'null');
     if (saved && saved.cats) { state.cats = Object.assign(state.cats, saved.cats); state.town = saved.town || ''; }
@@ -373,7 +378,7 @@ button, input, select { font: inherit; color: inherit; }
     return [[w, s], [e, n]];
   };
   const statusEl = $('mapstatus');
-  let map = null, ready = false, cardOpen = false, tip = null, focusPt = null;
+  let map = null, ready = false, cardOpen = false, tip = null, focusPt = null, geo = null;
   // Routes lit up by the tapped stop, each in its own color: [{ id, color }]
   const HI_TOKENS = ['--h1', '--h2', '--h3', '--h4', '--h5', '--h6', '--h7', '--h8'];
   let hi = [];
@@ -509,11 +514,15 @@ button, input, select { font: inherit; color: inherit; }
         sel: { type: 'geojson', data: selData() },
         selstops: { type: 'geojson', data: selStopData() },
         focus: { type: 'geojson', data: focusData() },
+        near: { type: 'geojson', data: nearData() },
+        nearstops: { type: 'geojson', data: nearStopsData() },
         buses: { type: 'geojson', data: busData(live.route && live.route.r === state.sel ? live.route : null) },
       },
       layers: base.concat([
         { id: 'borders', type: 'line', source: 'borders', paint: { 'line-color': t('--border'), 'line-width': Z(8, 0.6, 12, 1, 15, 1.4), 'line-dasharray': [3, 2.5] } },
         { id: 'metro', type: 'line', source: 'metro', layout: ROUND, paint: { 'line-color': t('--mrt'), 'line-width': Z(8, 1.2, 12, 2, 15, 3), 'line-opacity': 0.7 } },
+        { id: 'near-fill', type: 'fill', source: 'near', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': t('--go'), 'fill-opacity': 0.06 } },
+        { id: 'near-line', type: 'line', source: 'near', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'line-color': t('--go'), 'line-width': 1.5, 'line-dasharray': [2, 2] } },
         { id: 'routes', type: 'line', source: 'routes', filter: inList('rid', view.ids), layout: ROUND,
           paint: { 'line-color': ['match', ['get', 'cat'], 'T', t('--c-t'), 'O', t('--c-o'), t('--c-f')], 'line-width': W_ROUTE, 'line-opacity': routeOpacity(state.sel || hi.length) } },
         { id: 'routes-hi-casing', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': ZX(8, 3.5, 12, 5.5, 15, 8), 'line-opacity': 0.9 } },
@@ -527,6 +536,8 @@ button, input, select { font: inherit; color: inherit; }
           paint: { 'circle-radius': Z(9, ['match', ['get', 'kind'], 'hsr', 3, 2.2], 13, ['match', ['get', 'kind'], 'hsr', 5, 4]), 'circle-color': ['match', ['get', 'kind'], 'hsr', t('--rail'), t('--panel')], 'circle-stroke-color': ['match', ['get', 'kind'], 'mrt', t('--mrt'), t('--rail')], 'circle-stroke-width': Z(9, 1.2, 13, 2) } },
         { id: 'stops', type: 'circle', source: 'stops', filter: inList('gi', view.gis),
           paint: { 'circle-radius': STOP_R, 'circle-color': Z(9.5, t('--stop-ring'), 11, t('--panel')), 'circle-stroke-color': t('--stop-ring'), 'circle-stroke-width': STOP_STROKE, 'circle-opacity': stopOpacity(fade), 'circle-stroke-opacity': stopOpacity(fade) } },
+        { id: 'near-stops', type: 'circle', source: 'nearstops', paint: { 'circle-radius': Z(12, 4, 15, 7), 'circle-opacity': 0, 'circle-stroke-color': t('--go'), 'circle-stroke-width': 2 } },
+        { id: 'near-centre', type: 'circle', source: 'near', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 6, 'circle-color': t('--back'), 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } },
         { id: 'stops-hit', type: 'circle', source: 'stops', filter: inList('gi', view.hits),
           paint: { 'circle-radius': HIT_R, 'circle-color': t('--go'), 'circle-stroke-color': t('--panel'), 'circle-stroke-width': 1.5 } },
         { id: 'sel-stops', type: 'circle', source: 'selstops',
@@ -591,6 +602,14 @@ button, input, select { font: inherit; color: inherit; }
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true, timeout: 10000 }, trackUserLocation: false, showAccuracyCircle: false, fitBoundsOptions: { maxZoom: 16, duration: 0 } });
+    map.addControl(geo, 'top-left');
+    geo.on('geolocate', e => openNearby(e.coords.latitude, e.coords.longitude, '你的位置'));
+    geo.on('outofmaxbounds', () => { flash('你目前不在桃園，改查地圖中心附近'); nearFromCentre(); });
+    geo.on('error', e => {
+      if (e.code === 1) flash('沒有定位權限：請在瀏覽器設定允許這個網站使用位置');
+      else { flash('暫時抓不到位置，改查地圖中心附近'); nearFromCentre(); }
+    });
     map.addControl(new maplibregl.AttributionControl({ compact: narrow.matches, customAttribution: '底圖 © OpenStreetMap 貢獻者・Protomaps｜路線 桃園市公車動態資訊系統' }), narrow.matches ? 'top-right' : 'bottom-right');
     map.on('styleimagemissing', e => {
       if (map.hasImage(e.id)) return;
@@ -704,6 +723,7 @@ button, input, select { font: inherit; color: inherit; }
     if (!cardOpen) return;
     cardOpen = false; cardEl.hidden = true;
     setStopHi(null); setFocus(null); liveStop = null; pollLive();
+    if (state.near && !state.sel) renderNearby(false);
   }
 
   // Popup listing every route that stops here; ctx = {r, k, i} when opened from the selected route.
@@ -922,7 +942,7 @@ button, input, select { font: inherit; color: inherit; }
     const dayBtns = [['wk', '平日'], ['we', '假日']].map(([v, l]) => `<button data-day="${v}" aria-pressed="${state.day === v}">${l}${v === todayType ? '（今天）' : ''}</button>`).join('');
     detailEl.innerHTML = `
       <div class="d-top">
-        <button class="back" data-back>← 全部路線</button>
+        <button class="back" data-back>← ${state.near ? '附近站牌' : '全部路線'}</button>
         <div class="d-title">
           <span class="badge big c-${r.c}">${esc(r.n)}</span>
           <div><h2>${esc(r.d)}</h2><p>${esc(r.a)} ${r.dirs.length > 1 ? '⇄' : '→'} ${esc(r.b)}</p></div>
@@ -964,7 +984,7 @@ button, input, select { font: inherit; color: inherit; }
 
   function closeStopView() {
     state.stopView = false; setFocus(null); setStopHi(null); liveStop = null; pollLive();
-    if (state.sel) { renderDetail(); detailEl.scrollTop = 0; } else { showDetail(false); leaveDetail(); }
+    if (state.sel) { renderDetail(); detailEl.scrollTop = 0; } else if (state.near) renderNearby(false); else { showDetail(false); leaveDetail(); }
   }
 
   function select(id, fit = true) {
@@ -993,7 +1013,11 @@ button, input, select { font: inherit; color: inherit; }
     const t = e.target.closest('button'); if (!t) return;
     if (t.dataset.go) return select(t.dataset.go);
     if (t.hasAttribute('data-back-stop')) return closeStopView();
-    if (t.hasAttribute('data-back')) return clearSel();
+    if (t.hasAttribute('data-back')) return state.near ? backToNearby() : clearSel();
+    if (t.hasAttribute('data-back-near')) return closeNearby();
+    if (t.dataset.radius) { state.near.radius = +t.dataset.radius; return renderNearby(true); }
+    if (t.hasAttribute('data-near-centre')) return nearFromCentre();
+    if (t.hasAttribute('data-near-here')) { if (!geo || !geo.trigger()) nearFromCentre(); return; }
     if (t.dataset.dir !== undefined) { state.dir = Number(t.dataset.dir); renderDetail(); drawSel(); return; }
     if (t.dataset.day) { state.day = t.dataset.day; renderDetail(); return; }
     if (t.dataset.stop !== undefined) {
@@ -1027,6 +1051,102 @@ button, input, select { font: inherit; color: inherit; }
   };
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', restyle);
   new MutationObserver(restyle).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- nearby stops: your location (or the map centre) and a 100 / 300 / 500 m radius ----------
+  const RADII = [100, 300, 500];
+  // Closest boardable stop for each route direction within the radius
+  function nearbyTargets(la, lo, radius) {
+    const best = new Map();
+    groups.forEach(g => {
+      const d = metres(la, lo, g.la, g.lo);
+      if (d > radius) return;
+      for (const x of stopTargets(g)) {
+        const key = `${x.r.id}:${x.k}`, cur = best.get(key);
+        if (!cur || d < cur.d) best.set(key, Object.assign({ d, g }, x));
+      }
+    });
+    return [...best.values()].sort((a, b) => a.d - b.d);
+  }
+  const circle = (la, lo, r) => {
+    const pts = [];
+    for (let i = 0; i <= 64; i++) { const a = i / 64 * 2 * Math.PI; pts.push([lo + r * Math.cos(a) / 101000, la + r * Math.sin(a) / 110800]); }
+    return pts;
+  };
+  const nearData = () => {
+    const n = state.near; if (!n) return fc([]);
+    const out = [feat({ type: 'Polygon', coordinates: [circle(n.la, n.lo, n.radius)] })];
+    // your own position already has the location dot; mark the centre only when it is the map centre
+    if (n.label !== '你的位置') out.push(feat({ type: 'Point', coordinates: [n.lo, n.la] }));
+    return fc(out);
+  };
+  const nearStopsData = () => {
+    const n = state.near; if (!n || !n.targets) return fc([]);
+    return fc([...new Set(n.targets.map(x => x.g))].map(g => feat({ type: 'Point', coordinates: [g.lo, g.la] })));
+  };
+  function drawNear() {
+    if (!ready) return;
+    try { map.getSource('near').setData(nearData()); map.getSource('nearstops').setData(nearStopsData()); } catch (e) {}
+  }
+
+  function openNearby(la, lo, label) {
+    closePopup(); setFocus(null);
+    state.sel = null; state.stopView = false;
+    state.near = { la, lo, label, radius: state.near ? state.near.radius : 300 };
+    drawSel();
+    renderNearby(true);
+  }
+  function renderNearby(fit) {
+    const n = state.near;
+    n.targets = nearbyTargets(n.la, n.lo, n.radius);
+    const routes = [...new Set(n.targets.map(x => x.r))];
+    hi = routes.map((r, i) => ({ id: r.id, color: tok(HI_TOKENS[i % HI_TOKENS.length]) }));
+    liveStop = n.targets.length ? { g: null, targets: n.targets } : null;
+    const stopsN = new Set(n.targets.map(x => x.g)).size;
+    const radios = RADII.map(r => `<button data-radius="${r}" aria-pressed="${r === n.radius}">${r} 公尺</button>`).join('');
+    const rows = n.targets.map((x, idx) => `<button class="pr" data-go="${x.r.id}" data-ti="${idx}" style="--sw:${hi.find(h => h.id === x.r.id).color}">
+        <span class="badge sm c-${x.r.c}">${esc(x.r.n)}</span>
+        <span class="pr-t"><span>${esc(stopRole(x.r, x.k, x.i))}</span><small>${esc(x.g.name)}・${Math.round(x.d)} 公尺</small></span>
+        <span class="pr-eta" data-seta="${idx}"></span></button>`).join('');
+    detailEl.innerHTML = `<div class="d-top stopview">
+        <button class="back" data-back-near>← 全部路線</button>
+        <div class="pp">
+          <strong>${esc(n.label)}附近</strong>
+          <div class="seg" role="group" aria-label="範圍">${radios}</div>
+          ${n.targets.length
+            ? `<span class="pp-n">${n.radius} 公尺內有 ${stopsN} 個站牌、${n.targets.length} 個方向的車・點路線看全線</span>
+               <span class="pp-live" data-sbar>讀取到站時間中…</span>
+               <div class="pp-routes">${rows}</div>`
+            : `<p class="none">${n.radius} 公尺內沒有小巴站牌。可以改成更大的範圍，或移動地圖後按「查地圖中心附近」。</p>`}
+          <div class="near-acts"><button class="linkbtn" data-near-here>重新定位</button><button class="linkbtn" data-near-centre>查地圖中心附近</button></div>
+        </div>
+      </div>` + NOTE;
+    showDetail(true); detailEl.scrollTop = 0;
+    updateLines(); drawNear(); pollLive();
+    enterDetail();
+    if (fit) {
+      const ring = circle(n.la, n.lo, n.radius).map(([x, y]) => [y, x]);
+      map.fitBounds(boundsOf(ring), { padding: { top: 40, left: 40, right: 40, bottom: 40 + sheetCover('half') }, maxZoom: 17, duration: reduceMotion ? 0 : 600 });
+    }
+  }
+  function closeNearby() {
+    state.near = null; liveStop = null; hi = [];
+    drawNear(); updateLines(); pollLive();
+    showDetail(false); leaveDetail();
+  }
+  function backToNearby() {
+    state.sel = null; state.stopView = false; closePopup(); setFocus(null);
+    drawSel(); renderNearby(true);
+  }
+  // The visible map centre (above the sheet on phones)
+  function nearFromCentre() {
+    const c = map.getContainer();
+    const p = map.unproject([c.clientWidth / 2, (c.clientHeight - sheetCover()) / 2]);
+    openNearby(p.lat, p.lng, '地圖中心');
+  }
+  function flash(text) {
+    statusEl.textContent = text; statusEl.hidden = false;
+    clearTimeout(flash.t); flash.t = setTimeout(() => { if (!busy.size) statusEl.hidden = true; }, 5000);
+  }
 
   // ---------- phone bottom sheet: drag the handle or title bar; tap it to step up ----------
   const sheet = $('sheet'), appEl = document.querySelector('.app');
@@ -1074,6 +1194,8 @@ button, input, select { font: inherit; color: inherit; }
   ['focus', 'pointerdown'].forEach(ev => $('q').addEventListener(ev, () => { if (narrow.matches && sheetState !== 'full') setSheet('full'); }));
   narrow.addEventListener('change', () => setSheet(sheetState, false));
   window.addEventListener('resize', () => { if (narrow.matches && !drag) setSheet(sheetState, false); });
+
+  $('near-btn').addEventListener('click', () => { if (!geo || !geo.trigger()) nearFromCentre(); });
 
   // ---------- boot ----------
   setSheet('peek', false);
