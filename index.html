@@ -231,22 +231,42 @@ button, input, select { font: inherit; color: inherit; }
 .eta.off { background: transparent; color: var(--muted); font-weight: 500; padding: 0; }
 .stopview .pp-routes { max-height: none; overflow: visible; }
 
+.stopcard {
+  position: absolute; top: 10px; right: 10px; z-index: 4; width: min(330px, calc(100% - 80px)); max-height: calc(100% - 60px); overflow: auto;
+  box-sizing: border-box; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--hair); background: var(--panel); color: var(--ink);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22); font-size: 13.5px; line-height: 1.5; overscroll-behavior: contain;
+}
+.stopcard .pp-routes { max-height: none; overflow: visible; }
+.sc-close { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.sc-close:hover { background: var(--bg); }
+.grab { display: none; flex: none; height: 22px; align-items: center; justify-content: center; touch-action: none; cursor: grab; }
+.grab span { width: 40px; height: 5px; border-radius: 3px; background: var(--hair); }
+/* Phones: the map fills the screen and the panel is a bottom sheet with three heights (peek / half / full). */
 @media (max-width: 760px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44% minmax(0, 1fr); gap: 10px; padding: 10px 16px 12px; }
-  .mapwrap { order: -1; }
-  .brand { padding: 12px 14px 8px; }
-  .brand h1 { font-size: 26px; }
+  .app { display: block; position: relative; padding: 0; }
+  .mapwrap { position: absolute; inset: 0; border: 0; border-radius: 0; }
+  .side {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; height: 150px;
+    border: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
+    transition: height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .side.dragging { transition: none; }
+  .grab { display: flex; }
+  .brand { padding: 0 16px 8px; align-items: center; touch-action: none; cursor: grab; }
+  .brand h1 { font-size: 20px; }
   .controls { padding: 0 14px 10px; }
+  .mapstatus { top: 10px; bottom: auto; left: 50%; transform: translateX(-50%); }
   .ri { padding: 10px 14px; grid-template-columns: 70px minmax(0, 1fr); }
   .d-top, .sec, .count, .note { padding-left: 14px; padding-right: 14px; }
 }
-@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } .side { transition: none !important; } }
 </style>
 
 </head>
 <body>
 <div class="app">
-  <aside class="side">
+  <aside class="side" id="sheet">
+    <div class="grab" id="grab" aria-hidden="true"><span></span></div>
     <header class="brand">
       <h1><b>桃</b>小巴路線圖</h1>
       <p id="meta"></p>
@@ -265,7 +285,7 @@ button, input, select { font: inherit; color: inherit; }
     <div class="scroll" id="list"></div>
     <div class="scroll detail" id="detail" hidden></div>
   </aside>
-  <div class="mapwrap"><div id="map" role="application" aria-label="桃小巴路線地圖"></div><p class="mapstatus" id="mapstatus" role="status">底圖載入中…</p></div>
+  <div class="mapwrap"><div id="map" role="application" aria-label="桃小巴路線地圖"></div><p class="mapstatus" id="mapstatus" role="status">底圖載入中…</p><section class="stopcard" id="stopcard" hidden aria-label="站牌資訊"><button class="sc-close" id="sc-close" aria-label="關閉">×</button><div id="sc-body"></div></section></div>
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
@@ -353,7 +373,7 @@ button, input, select { font: inherit; color: inherit; }
     return [[w, s], [e, n]];
   };
   const statusEl = $('mapstatus');
-  let map = null, ready = false, popup = null, tip = null, focusPt = null;
+  let map = null, ready = false, cardOpen = false, tip = null, focusPt = null;
   // Routes lit up by the tapped stop, each in its own color: [{ id, color }]
   const HI_TOKENS = ['--h1', '--h2', '--h3', '--h4', '--h5', '--h6', '--h7', '--h8'];
   let hi = [];
@@ -563,7 +583,7 @@ button, input, select { font: inherit; color: inherit; }
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-    map.addControl(new maplibregl.AttributionControl({ compact: narrow.matches, customAttribution: '底圖 © OpenStreetMap 貢獻者・Protomaps｜路線 桃園市公車動態資訊系統' }), 'bottom-right');
+    map.addControl(new maplibregl.AttributionControl({ compact: narrow.matches, customAttribution: '底圖 © OpenStreetMap 貢獻者・Protomaps｜路線 桃園市公車動態資訊系統' }), narrow.matches ? 'top-right' : 'bottom-right');
     map.on('styleimagemissing', e => {
       if (map.hasImage(e.id)) return;
       if (e.id.startsWith('bus-')) map.addImage(e.id, busImage(e.id.slice(4)), { pixelRatio: 2 });
@@ -578,7 +598,7 @@ button, input, select { font: inherit; color: inherit; }
 
     map.on('click', e => {
       const f = hitAt(e.point);
-      if (!f) { if (state.stopView) closeStopView(); return; }
+      if (!f) { if (state.stopView) closeStopView(); else closePopup(); return; }
       const id = f.layer.id;
       if (id === 'buses') return;
       if (id === 'sel-stops') { const r = state.sel, k = state.dir, i = f.properties.i; openStop(r.gid[k][i], { r, k, i }); }
@@ -595,12 +615,15 @@ button, input, select { font: inherit; color: inherit; }
         map.getCanvas().style.cursor = f ? 'pointer' : '';
         const line = f && (f.layer.id === 'routes' || f.layer.id === 'routes-hi');
         const text = !f ? '' : line || f.layer.id === 'buses' ? f.properties.tip : f.layer.id === 'sel-stops' ? f.properties.label : groups[f.properties.gi].name;
-        if (text && (!popup || line)) tip.setLngLat(line ? e.lngLat : f.geometry.coordinates).setText(text).addTo(map);
+        if (text) tip.setLngLat(line ? e.lngLat : f.geometry.coordinates).setText(text).addTo(map);
         else tip.remove();
       });
     });
     map.getCanvas().addEventListener('mouseleave', () => tip.remove());
-    // Route buttons inside a stop popup
+    // Route buttons inside the stop card
+    cardEl.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) select(b.dataset.go); });
+    $('sc-close').addEventListener('click', closePopup);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePopup(); });
     map.getContainer().addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) select(b.dataset.go); });
     archive.getHeader().catch(useFallback);
   }
@@ -666,7 +689,13 @@ button, input, select { font: inherit; color: inherit; }
     return towardLabel(r, k) + (i === 0 ? '（起點）' : i === last ? '（終點）' : '');
   }
 
-  const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+  // Desktop: the stop's routes show in a card in the map's top-right corner, so nothing covers the lines.
+  const cardEl = $('stopcard');
+  function closePopup() {
+    if (!cardOpen) return;
+    cardOpen = false; cardEl.hidden = true;
+    setStopHi(null); setFocus(null); liveStop = null; pollLive();
+  }
 
   // Popup listing every route that stops here; ctx = {r, k, i} when opened from the selected route.
   function openStop(g, ctx) {
@@ -693,12 +722,16 @@ button, input, select { font: inherit; color: inherit; }
       state.stopView = true;
       detailEl.innerHTML = `<div class="d-top stopview"><button class="back" data-back-stop>← ${state.sel ? `回到 ${esc(state.sel.n)}` : '全部路線'}</button>${html}</div>` + NOTE;
       showDetail(true); detailEl.scrollTop = 0;
-      map.easeTo({ center: [lo, la], duration: reduceMotion ? 0 : 400 });
+      enterDetail();
+      map.easeTo({ center: [lo, la], offset: [0, -sheetCover('half') / 2], duration: reduceMotion ? 0 : 400 });
       pollLive();
       return;
     }
-    const mine = popup = new maplibregl.Popup({ maxWidth: '300px', offset: 12, focusAfterOpen: false }).setLngLat([lo, la]).setHTML(html).addTo(map);
-    popup.on('close', () => { if (popup === mine) { popup = null; setStopHi(null); setFocus(null); liveStop = null; pollLive(); } });
+    $('sc-body').innerHTML = html;
+    cardEl.hidden = false; cardEl.scrollTop = 0; cardOpen = true;
+    // If the stop sits under the card, slide the map so it shows to the card's left.
+    const p = map.project([lo, la]), cr = cardEl.getBoundingClientRect(), mr = map.getContainer().getBoundingClientRect();
+    if (mr.left + p.x > cr.left - 24 && mr.top + p.y < cr.bottom + 24) map.easeTo({ center: [lo, la], offset: [-cr.width / 2, 0], duration: reduceMotion ? 0 : 400 });
     pollLive();
   }
 
@@ -917,12 +950,12 @@ button, input, select { font: inherit; color: inherit; }
   function fitSel() {
     const r = state.sel;
     const pts = r.dirs.flatMap(k => r.shp[k].length ? r.shp[k] : r.st[k].map(s => [s[1], s[2]]));
-    if (pts.length) map.fitBounds(boundsOf(pts), { padding: 28, maxZoom: 15, duration: reduceMotion ? 0 : 600 });
+    if (pts.length) map.fitBounds(boundsOf(pts), { padding: { top: 28, left: 28, right: 28, bottom: 28 + sheetCover('half') }, maxZoom: 15, duration: reduceMotion ? 0 : 600 });
   }
 
   function closeStopView() {
     state.stopView = false; setFocus(null); setStopHi(null); liveStop = null; pollLive();
-    if (state.sel) { renderDetail(); detailEl.scrollTop = 0; } else showDetail(false);
+    if (state.sel) { renderDetail(); detailEl.scrollTop = 0; } else { showDetail(false); leaveDetail(); }
   }
 
   function select(id, fit = true) {
@@ -931,6 +964,7 @@ button, input, select { font: inherit; color: inherit; }
     closePopup(); setFocus(null); hi = [];
     renderDetail(); showDetail(true); detailEl.scrollTop = 0;
     updateLines(); drawSel();
+    enterDetail();
     if (fit) fitSel();
     liveStop = null; pollLive();
     try { history.replaceState(null, '', '#r' + r.id); } catch (e) {}
@@ -940,6 +974,7 @@ button, input, select { font: inherit; color: inherit; }
     state.sel = null; state.stopView = false; closePopup(); setFocus(null); hi = [];
     drawSel(); updateLines(); renderList(); showDetail(false);
     liveStop = null; pollLive();
+    leaveDetail();
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   }
 
@@ -955,7 +990,7 @@ button, input, select { font: inherit; color: inherit; }
     if (t.dataset.stop !== undefined) {
       const i = Number(t.dataset.stop), k = state.dir, r = state.sel, s = r.st[k][i];
       openStop(r.gid[k][i], { r, k, i });
-      map.flyTo({ center: [s[2], s[1]], zoom: Math.max(map.getZoom(), 15), duration: reduceMotion ? 0 : 600 });
+      map.flyTo({ center: [s[2], s[1]], zoom: Math.max(map.getZoom(), 15), offset: [0, -sheetCover() / 2], duration: reduceMotion ? 0 : 600 });
     }
   });
   document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
@@ -969,7 +1004,7 @@ button, input, select { font: inherit; color: inherit; }
   townSel.addEventListener('change', () => {
     state.town = townSel.value; saveFilters(); renderList(); updateLines();
     const pts = R.filter(shown).flatMap(r => r.shp.flat());
-    if (state.town && pts.length) map.fitBounds(boundsOf(pts), { padding: 20, duration: reduceMotion ? 0 : 600 });
+    if (state.town && pts.length) map.fitBounds(boundsOf(pts), { padding: { top: 20, left: 20, right: 20, bottom: 20 + sheetCover() }, duration: reduceMotion ? 0 : 600 });
   });
   let qTimer;
   $('q').addEventListener('input', e => {
@@ -984,7 +1019,55 @@ button, input, select { font: inherit; color: inherit; }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', restyle);
   new MutationObserver(restyle).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+  // ---------- phone bottom sheet: drag the handle or title bar; tap it to step up ----------
+  const sheet = $('sheet'), appEl = document.querySelector('.app');
+  const SNAP = { peek: () => 150, half: () => Math.round(appEl.clientHeight * 0.5), full: () => appEl.clientHeight - 56 };
+  const ORDER_S = ['peek', 'half', 'full'];
+  let sheetState = 'peek', sheetBefore = null;
+  const sheetCover = s => (narrow.matches ? SNAP[s || sheetState]() : 0);   // map pixels hidden under the sheet
+  function setSheet(s, animate = true) {
+    sheetState = s;
+    if (!narrow.matches) { sheet.style.height = ''; return; }
+    sheet.classList.toggle('dragging', !animate);
+    sheet.style.height = SNAP[s]() + 'px';
+  }
+  function enterDetail() { if (!narrow.matches) return; if (sheetBefore === null) sheetBefore = sheetState; setSheet('half'); }
+  function leaveDetail() { if (!narrow.matches) return; setSheet(sheetBefore || 'peek'); sheetBefore = null; }
+  let drag = null;
+  [$('grab'), document.querySelector('.brand')].forEach(el => el.addEventListener('pointerdown', e => {
+    if (!narrow.matches) return;
+    drag = { id: e.pointerId, y0: e.clientY, h0: sheet.getBoundingClientRect().height, y: e.clientY, t: performance.now(), v: 0, moved: false };
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    sheet.classList.add('dragging');
+  }));
+  window.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const now = performance.now();
+    drag.v = (drag.y - e.clientY) / Math.max(1, now - drag.t);   // px per ms, upward is positive
+    drag.y = e.clientY; drag.t = now;
+    if (Math.abs(drag.y0 - e.clientY) > 5) drag.moved = true;
+    sheet.style.height = Math.max(SNAP.peek(), Math.min(SNAP.full(), drag.h0 + drag.y0 - e.clientY)) + 'px';
+  });
+  const endDrag = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    const i = ORDER_S.indexOf(sheetState);
+    if (!d.moved) { setSheet(ORDER_S[i === 2 ? 1 : i + 1]); return; }
+    const h = sheet.getBoundingClientRect().height;
+    let next;
+    if (d.v > 0.5) next = ORDER_S.find(s => SNAP[s]() > h + 10) || 'full';                   // flung up
+    else if (d.v < -0.5) next = [...ORDER_S].reverse().find(s => SNAP[s]() < h - 10) || 'peek'; // flung down
+    else next = ORDER_S.reduce((a, b) => (Math.abs(SNAP[b]() - h) < Math.abs(SNAP[a]() - h) ? b : a));
+    setSheet(next);
+  };
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  ['focus', 'pointerdown'].forEach(ev => $('q').addEventListener(ev, () => { if (narrow.matches && sheetState !== 'full') setSheet('full'); }));
+  narrow.addEventListener('change', () => setSheet(sheetState, false));
+  window.addEventListener('resize', () => { if (narrow.matches && !drag) setSheet(sheetState, false); });
+
   // ---------- boot ----------
+  setSheet('peek', false);
   renderList();
   initMap();
   const h = (location.hash || '').match(/^#r(\d+)$/);
