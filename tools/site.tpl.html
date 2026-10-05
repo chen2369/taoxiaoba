@@ -469,8 +469,16 @@ button, input, select { font: inherit; color: inherit; }
   const inList = (prop, list) => ['in', ['get', prop], ['literal', list]];
 
   const FONT = ['Noto Sans Medium'];
-  const STOP_R = ['step', ['zoom'], 1.6, 10, 2.4, 11.5, 3.4, 13.5, 4.6];
-  const HIT_R = ['step', ['zoom'], 3.6, 10, 4.4, 11.5, 5.4, 13.5, 6.6];
+  // Sizes follow the zoom: at city scale the routes read as a thin network and stops as specks;
+  // street-level detail (white stop rings, thick lines, labels) arrives as you zoom in.
+  const Z = (...stops) => ['interpolate', ['linear'], ['zoom'], ...stops];
+  const ZX = (...stops) => ['interpolate', ['exponential', 1.5], ['zoom'], ...stops];
+  const W_ROUTE = ZX(8, 0.8, 11, 1.6, 14, 3, 17, 5);
+  const routeOpacity = dim => (dim ? 0.18 : Z(8, 0.7, 12, 0.85));
+  const STOP_R = Z(8, 0.9, 10, 1.3, 12, 2.6, 14, 4, 16, 5);
+  const STOP_STROKE = Z(9.5, 0, 11, 0.8, 13, 1.4);
+  const stopOpacity = fade => Z(8, 0.6 * fade, 11, fade);
+  const HIT_R = Z(8, 2.6, 12, 4.6, 15, 6.6);
   const ROUND = { 'line-join': 'round', 'line-cap': 'round' };
   function buildStyle() {
     const t = tok, flavor = t('--flavor') || 'light';
@@ -504,29 +512,29 @@ button, input, select { font: inherit; color: inherit; }
         buses: { type: 'geojson', data: busData(live.route && live.route.r === state.sel ? live.route : null) },
       },
       layers: base.concat([
-        { id: 'borders', type: 'line', source: 'borders', paint: { 'line-color': t('--border'), 'line-width': 1.2, 'line-dasharray': [3, 2.5] } },
-        { id: 'metro', type: 'line', source: 'metro', layout: ROUND, paint: { 'line-color': t('--mrt'), 'line-width': 2.4, 'line-opacity': 0.7 } },
+        { id: 'borders', type: 'line', source: 'borders', paint: { 'line-color': t('--border'), 'line-width': Z(8, 0.6, 12, 1, 15, 1.4), 'line-dasharray': [3, 2.5] } },
+        { id: 'metro', type: 'line', source: 'metro', layout: ROUND, paint: { 'line-color': t('--mrt'), 'line-width': Z(8, 1.2, 12, 2, 15, 3), 'line-opacity': 0.7 } },
         { id: 'routes', type: 'line', source: 'routes', filter: inList('rid', view.ids), layout: ROUND,
-          paint: { 'line-color': ['match', ['get', 'cat'], 'T', t('--c-t'), 'O', t('--c-o'), t('--c-f')], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 3.6], 'line-opacity': state.sel || hi.length ? 0.18 : 0.85 } },
-        { id: 'routes-hi-casing', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': 7.5, 'line-opacity': 0.9 } },
-        { id: 'routes-hi', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': hiColor(), 'line-width': 4.5 } },
-        { id: 'sel-other', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'other'], layout: ROUND, paint: { 'line-color': dir, 'line-width': 3, 'line-opacity': 0.55, 'line-dasharray': [2, 2] } },
-        { id: 'sel-casing', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'active'], layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': 9, 'line-opacity': 0.9 } },
-        { id: 'sel-active', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'active'], layout: ROUND, paint: { 'line-color': dir, 'line-width': 5 } },
+          paint: { 'line-color': ['match', ['get', 'cat'], 'T', t('--c-t'), 'O', t('--c-o'), t('--c-f')], 'line-width': W_ROUTE, 'line-opacity': routeOpacity(state.sel || hi.length) } },
+        { id: 'routes-hi-casing', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': ZX(8, 3.5, 12, 5.5, 15, 8), 'line-opacity': 0.9 } },
+        { id: 'routes-hi', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': hiColor(), 'line-width': ZX(8, 2, 12, 3.2, 15, 5) } },
+        { id: 'sel-other', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'other'], layout: ROUND, paint: { 'line-color': dir, 'line-width': ZX(8, 1.2, 12, 2, 15, 3), 'line-opacity': 0.55, 'line-dasharray': [2, 2] } },
+        { id: 'sel-casing', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'active'], layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': ZX(8, 4.5, 12, 6.5, 15, 9.5), 'line-opacity': 0.9 } },
+        { id: 'sel-active', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'active'], layout: ROUND, paint: { 'line-color': dir, 'line-width': ZX(8, 2.5, 12, 4, 15, 5.5) } },
       ], labels, [
         { id: 'mask', type: 'fill', source: 'mask', paint: { 'fill-color': t('--outside'), 'fill-opacity': 0.88 } },
         { id: 'stations', type: 'circle', source: 'stations',
-          paint: { 'circle-radius': ['match', ['get', 'kind'], 'hsr', 5, 4], 'circle-color': ['match', ['get', 'kind'], 'hsr', t('--rail'), t('--panel')], 'circle-stroke-color': ['match', ['get', 'kind'], 'mrt', t('--mrt'), t('--rail')], 'circle-stroke-width': 2 } },
+          paint: { 'circle-radius': Z(9, ['match', ['get', 'kind'], 'hsr', 3, 2.2], 13, ['match', ['get', 'kind'], 'hsr', 5, 4]), 'circle-color': ['match', ['get', 'kind'], 'hsr', t('--rail'), t('--panel')], 'circle-stroke-color': ['match', ['get', 'kind'], 'mrt', t('--mrt'), t('--rail')], 'circle-stroke-width': Z(9, 1.2, 13, 2) } },
         { id: 'stops', type: 'circle', source: 'stops', filter: inList('gi', view.gis),
-          paint: { 'circle-radius': STOP_R, 'circle-color': t('--panel'), 'circle-stroke-color': t('--stop-ring'), 'circle-stroke-width': 1.4, 'circle-opacity': fade, 'circle-stroke-opacity': fade } },
+          paint: { 'circle-radius': STOP_R, 'circle-color': Z(9.5, t('--stop-ring'), 11, t('--panel')), 'circle-stroke-color': t('--stop-ring'), 'circle-stroke-width': STOP_STROKE, 'circle-opacity': stopOpacity(fade), 'circle-stroke-opacity': stopOpacity(fade) } },
         { id: 'stops-hit', type: 'circle', source: 'stops', filter: inList('gi', view.hits),
           paint: { 'circle-radius': HIT_R, 'circle-color': t('--go'), 'circle-stroke-color': t('--panel'), 'circle-stroke-width': 1.5 } },
         { id: 'sel-stops', type: 'circle', source: 'selstops',
-          paint: { 'circle-radius': ['case', ['get', 'end'], 7, 5], 'circle-color': ['case', ['get', 'end'], dir, t('--panel')], 'circle-stroke-color': dir, 'circle-stroke-width': 2.5 } },
-        { id: 'buses', type: 'symbol', source: 'buses', layout: { 'icon-image': ['concat', 'bus-', ['get', 'col']], 'icon-rotate': ['get', 'az'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
-        { id: 'focus', type: 'circle', source: 'focus', paint: { 'circle-radius': 11, 'circle-opacity': 0, 'circle-stroke-color': t('--go'), 'circle-stroke-width': 3 } },
+          paint: { 'circle-radius': Z(9, ['case', ['get', 'end'], 3.5, 2.2], 13, ['case', ['get', 'end'], 7, 5]), 'circle-color': ['case', ['get', 'end'], dir, t('--panel')], 'circle-stroke-color': dir, 'circle-stroke-width': Z(9, 1.4, 13, 2.5) } },
+        { id: 'buses', type: 'symbol', source: 'buses', layout: { 'icon-image': ['concat', 'bus-', ['get', 'col']], 'icon-rotate': ['get', 'az'], 'icon-rotation-alignment': 'map', 'icon-size': Z(9, 0.55, 13, 0.85, 15, 1), 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'focus', type: 'circle', source: 'focus', paint: { 'circle-radius': Z(9, 7, 14, 11), 'circle-opacity': 0, 'circle-stroke-color': t('--go'), 'circle-stroke-width': Z(9, 2, 14, 3) } },
         { id: 'districts', type: 'symbol', source: 'districts', maxzoom: state.fallback ? 24 : 9.5,
-          layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 15, 'text-letter-spacing': 0.3 }, paint: Object.assign({ 'text-color': t('--maplabel') }, halo) },
+          layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': Z(8, 12, 9.5, 14), 'text-letter-spacing': 0.3 }, paint: Object.assign({ 'text-color': t('--maplabel') }, halo) },
         { id: 'stations-label', type: 'symbol', source: 'stations', minzoom: 11, maxzoom: state.fallback ? 24 : 13,
           layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 12, 'text-anchor': 'left', 'text-offset': [0.7, 0] },
           paint: Object.assign({ 'text-color': ['match', ['get', 'kind'], 'mrt', t('--mrt'), t('--ink')] }, halo) },
@@ -575,7 +583,7 @@ button, input, select { font: inherit; color: inherit; }
     computeView();
     map = new maplibregl.Map({
       container: 'map', style: buildStyle(),
-      bounds: boundsOf(R.filter(r => r.c !== 'F').flatMap(r => r.shp.flat())), fitBoundsOptions: { padding: 12 },
+      bounds: boundsOf(R.filter(r => r.c !== 'F').flatMap(r => r.shp.flat())), fitBoundsOptions: { padding: narrow.matches ? { top: 16, left: 12, right: 12, bottom: 166 } : 12 },
       maxBounds: [[120.6, 24.35], [121.9, 25.4]], minZoom: 8, maxZoom: 18,
       dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: false,
       localIdeographFontFamily: '"PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", sans-serif',
@@ -656,14 +664,14 @@ button, input, select { font: inherit; color: inherit; }
     const dim = state.sel || hi.length, fade = dim ? 0.55 : 1;
     try {
       map.setFilter('routes', inList('rid', view.ids));
-      map.setPaintProperty('routes', 'line-opacity', dim ? 0.18 : 0.85);
+      map.setPaintProperty('routes', 'line-opacity', routeOpacity(dim));
       map.setFilter('routes-hi', hiFilter());
       map.setFilter('routes-hi-casing', hiFilter());
       map.setPaintProperty('routes-hi', 'line-color', hiColor());
       map.setFilter('stops', inList('gi', view.gis));
       map.setFilter('stops-hit', inList('gi', view.hits));
-      map.setPaintProperty('stops', 'circle-opacity', fade);
-      map.setPaintProperty('stops', 'circle-stroke-opacity', fade);
+      map.setPaintProperty('stops', 'circle-opacity', stopOpacity(fade));
+      map.setPaintProperty('stops', 'circle-stroke-opacity', stopOpacity(fade));
     } catch (e) { map.once('styledata', updateLines); }
   }
 
@@ -680,7 +688,8 @@ button, input, select { font: inherit; color: inherit; }
     } catch (e) { map.once('styledata', drawSel); }
   }
 
-  const towardLabel = (r, k) => r.dirs.length === 1 ? (r.loop ? '循環線' : `${r.a} → ${r.b}`) : `往 ${k === 0 ? r.b : r.a}`;
+  // Direction name; a two-way route that starts and ends at the same stop says 去程／返程 instead of 往 X twice
+  const towardLabel = (r, k) => r.dirs.length === 1 ? (r.loop ? '循環線' : `${r.a} → ${r.b}`) : r.loop ? (k === 0 ? '去程' : '返程') : `往 ${k === 0 ? r.b : r.a}`;
 
   // Where this stop sits on route r: "往 X（起點）", "循環線（起訖站）" …
   function stopRole(r, k, i) {
