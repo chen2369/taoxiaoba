@@ -211,14 +211,15 @@ button, input, select { font: inherit; color: inherit; }
 .pp a { color: var(--back); }
 .pp-n { font-size: 12.5px; }
 .pp-routes { display: grid; gap: 2px; max-height: min(320px, 36vh); overflow: auto; margin: 2px -4px; overscroll-behavior: contain; }
-.pr { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; width: 100%; text-align: left; border: 0; border-left: 4px solid var(--sw, transparent); background: none; padding: 5px 4px 5px 8px; border-radius: 0 6px 6px 0; cursor: pointer; color: var(--ink); }
+.pr { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; align-items: start; width: 100%; text-align: left; border: 0; border-left: 4px solid var(--sw, transparent); background: none; padding: 5px 4px 5px 8px; border-radius: 0 6px 6px 0; cursor: pointer; color: var(--ink); }
 .pr:hover { background: var(--bg); }
 .pr-t { min-width: 0; display: grid; line-height: 1.35; }
 .pr-t > span { overflow-wrap: anywhere; color: var(--ink); }
 .pr-t small { font-size: 12px; color: var(--muted); }
 .badge.sm { font-size: 15px; min-width: 0; padding: 2px 6px 1px; }
 .stopview .pp strong { font-size: 18px; }
-.pr-dir { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 12px; color: var(--muted); }
+.pr-eta { align-self: center; text-align: right; }
+.pr-eta .eta.off { font-size: 12px; }
 .pp-live { font-size: 12px; }
 .livebar { margin: 0; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .livebar::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--eta-later); margin-right: 6px; vertical-align: 1px; }
@@ -502,8 +503,7 @@ button, input, select { font: inherit; color: inherit; }
           paint: { 'circle-radius': HIT_R, 'circle-color': t('--go'), 'circle-stroke-color': t('--panel'), 'circle-stroke-width': 1.5 } },
         { id: 'sel-stops', type: 'circle', source: 'selstops',
           paint: { 'circle-radius': ['case', ['get', 'end'], 7, 5], 'circle-color': ['case', ['get', 'end'], dir, t('--panel')], 'circle-stroke-color': dir, 'circle-stroke-width': 2.5 } },
-        { id: 'buses', type: 'circle', source: 'buses', paint: { 'circle-radius': 10, 'circle-color': dir, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } },
-        { id: 'buses-arrow', type: 'symbol', source: 'buses', layout: { 'icon-image': 'bus-arrow', 'icon-rotate': ['get', 'az'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'buses', type: 'symbol', source: 'buses', layout: { 'icon-image': ['concat', 'bus-', ['get', 'col']], 'icon-rotate': ['get', 'az'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
         { id: 'focus', type: 'circle', source: 'focus', paint: { 'circle-radius': 11, 'circle-opacity': 0, 'circle-stroke-color': t('--go'), 'circle-stroke-width': 3 } },
         { id: 'districts', type: 'symbol', source: 'districts', maxzoom: state.fallback ? 24 : 9.5,
           layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 15, 'text-letter-spacing': 0.3 }, paint: Object.assign({ 'text-color': t('--maplabel') }, halo) },
@@ -533,12 +533,22 @@ button, input, select { font: inherit; color: inherit; }
     return null;
   }
 
-  // White arrow drawn inside each bus dot, rotated to the bus heading
-  function arrowImage() {
-    const c = document.createElement('canvas'); c.width = c.height = 32;
-    const x = c.getContext('2d'); x.fillStyle = '#ffffff';
-    x.beginPath(); x.moveTo(16, 5); x.lineTo(25, 25); x.lineTo(16, 20); x.lineTo(7, 25); x.closePath(); x.fill();
-    return { width: 32, height: 32, data: new Uint8Array(x.getImageData(0, 0, 32, 32).data.buffer) };
+  // Minibus seen from above, nose pointing up (north); the layer rotates it to the bus heading.
+  // One image per color, named "bus-<hex>", drawn on first use.
+  function busImage(hex) {
+    const S = 72, c = document.createElement('canvas'); c.width = c.height = S;
+    const x = c.getContext('2d');
+    const box = (l, tp, w, h, r) => { x.beginPath(); x.roundRect(l, tp, w, h, r); };
+    x.shadowColor = 'rgba(0, 0, 0, 0.35)'; x.shadowBlur = 4; x.shadowOffsetY = 1;
+    box(21, 5, 30, 62, 9); x.fillStyle = '#ffffff'; x.fill();           // white outline keeps it visible on any map
+    x.shadowColor = 'transparent';
+    box(24, 8, 24, 56, 7); x.fillStyle = '#' + hex; x.fill();           // body
+    x.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    box(27, 13, 18, 10, 3); x.fill();                                   // windshield (front)
+    x.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    box(26, 27, 3, 26, 1.5); x.fill(); box(43, 27, 3, 26, 1.5); x.fill(); // side windows
+    box(28, 57, 16, 4, 1.5); x.fill();                                  // rear window
+    return { width: S, height: S, data: new Uint8Array(x.getImageData(0, 0, S, S).data.buffer) };
   }
 
   function initMap() {
@@ -556,7 +566,7 @@ button, input, select { font: inherit; color: inherit; }
     map.addControl(new maplibregl.AttributionControl({ compact: narrow.matches, customAttribution: '底圖 © OpenStreetMap 貢獻者・Protomaps｜路線 桃園市公車動態資訊系統' }), 'bottom-right');
     map.on('styleimagemissing', e => {
       if (map.hasImage(e.id)) return;
-      if (e.id === 'bus-arrow') map.addImage(e.id, arrowImage(), { pixelRatio: 2 });
+      if (e.id.startsWith('bus-')) map.addImage(e.id, busImage(e.id.slice(4)), { pixelRatio: 2 });
       else map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
     });
     map.on('load', () => {
@@ -667,12 +677,10 @@ button, input, select { font: inherit; color: inherit; }
     const colorOf = r => (r === state.sel ? tok(state.dir === 0 ? '--go' : '--back') : hi.find(h => h.id === r.id).color);
     const targets = stopTargets(g);
     liveStop = { g, targets };
-    const rows = [...g.routes].map(([r]) => {
-      const dirs = targets.map((x, idx) => [x, idx]).filter(([x]) => x.r === r)
-        .map(([x, idx]) => `<small class="pr-dir">${esc(stopRole(r, x.k, x.i))} <span data-seta="${idx}"></span></small>`).join('');
-      return `<button class="pr" data-go="${r.id}" style="--sw:${colorOf(r)}"><span class="badge sm c-${r.c}">${esc(r.n)}</span>
-        <span class="pr-t"><span>${esc(r.d)}</span>${dirs}</span></button>`;
-    }).join('');
+    const rows = targets.map((x, idx) => `<button class="pr" data-go="${x.r.id}" data-ti="${idx}" style="--sw:${colorOf(x.r)}">
+        <span class="badge sm c-${x.r.c}">${esc(x.r.n)}</span>
+        <span class="pr-t"><span>${esc(stopRole(x.r, x.k, x.i))}</span><small>${esc(x.r.d)}</small></span>
+        <span class="pr-eta" data-seta="${idx}"></span></button>`).join('');
     const html = `<div class="pp">
       <strong>${esc(g.name)}</strong>
       ${ctx ? `<span>${esc(ctx.r.n)} 第 ${ctx.i + 1} 站・${esc(towardLabel(ctx.r, ctx.k))}</span>` : ''}
@@ -722,22 +730,43 @@ button, input, select { font: inherit; color: inherit; }
     if (n.comeTime) return [n.comeTime, 'now'];
     return ['未發車', 'off'];
   }
+  // Sort key: arriving now first, then minutes away, scheduled times, not yet departed, finished for the day.
+  function etaRank(n) {
+    if (!n) return 1e9;
+    if (!n.isOperationDay || n.isSuspended || n.isConstruction || n.isEvent) return 1e8;
+    if (n.etas.length) return Math.max(0, Math.min(...n.etas.map(e => e.etaTime)));
+    const m = /^(\d{1,2}):(\d{2})$/.exec(n.comeTime);
+    if (m) {
+      const now = new Date();
+      let d = (+m[1] * 60 + +m[2]) - (now.getHours() * 60 + now.getMinutes());
+      if (d < -60) d += 1440;   // a time just after midnight
+      return Math.max(0, d) + 0.5;
+    }
+    return n.comeTime ? 0 : 1e7;
+  }
   const etaHtml = n => { const e = eta(n); return e ? `<span class="eta ${e[1]}">${esc(e[0])}</span>` : ''; };
   const hhmmss = d => d.toLocaleTimeString('zh-TW', { hour12: false });
 
   const live = { timer: 0, ctrl: null, route: null, stop: null, at: null, err: false };
   let liveStop = null;   // the stop whose arrivals are shown: { g, targets: [{ r, k, i, sid }] }
+  // Route directions you can board here. A direction that ends at this stop is left out when the route
+  // also leaves from here, since nobody boards a bus at its last stop.
   function stopTargets(g) {
     const seen = new Set(), out = [];
-    for (const [r, hits] of g.routes) for (const [k, i] of hits) {
-      const sid = r.st[k][i][3], key = `${r.id}:${k}:${sid}`;
-      if (sid && !seen.has(key)) { seen.add(key); out.push({ r, k, i, sid }); }
+    for (const [r, hits] of g.routes) {
+      const isEnd = ([k, i]) => i === r.st[k].length - 1 && !(r.dirs.length === 1 && r.loop);
+      const board = hits.filter(h => !isEnd(h));
+      for (const [k, i] of board.length ? board : hits) {
+        const sid = r.st[k][i][3], key = `${r.id}:${k}:${sid}`;
+        if (sid && !seen.has(key)) { seen.add(key); out.push({ r, k, i, sid }); }
+      }
     }
     return out;
   }
   function busData(lr) {
     if (!lr) return fc([]);
-    return fc(lr.buses.map(b => feat({ type: 'Point', coordinates: [b.lon, b.lat] }, { k: b.k, az: b.az, tip: `${b.plate}・${towardLabel(lr.r, b.k)}` })));
+    return fc(lr.buses.map(b => feat({ type: 'Point', coordinates: [b.lon, b.lat] },
+      { k: b.k, az: b.az, col: tok(b.k === 0 ? '--go' : '--back').replace('#', ''), tip: `${b.plate}・${towardLabel(lr.r, b.k)}` })));
   }
   // One request for the selected route (buses + every stop's arrival) and one for the open stop; every 20 s while visible.
   async function pollLive() {
@@ -782,8 +811,12 @@ button, input, select { font: inherit; color: inherit; }
     document.querySelectorAll('[data-eta]').forEach(el => { el.innerHTML = lr ? etaHtml(lr.etas.get(el.dataset.eta)) : ''; });
     const ls = live.stop && live.stop.s === liveStop ? live.stop : null;
     document.querySelectorAll('[data-seta]').forEach(el => { el.innerHTML = ls ? etaHtml(ls.nodes[+el.dataset.seta]) : ''; });
+    if (ls) document.querySelectorAll('.pp-routes').forEach(box => {
+      const key = el => etaRank(ls.nodes[+el.dataset.ti]);
+      [...box.children].sort((a, b) => key(a) - key(b) || a.dataset.ti - b.dataset.ti).forEach(el => box.appendChild(el));
+    });
     document.querySelectorAll('[data-sbar]').forEach(el => {
-      el.textContent = ls ? `到站時間 ${hhmmss(live.at)} 更新・每 20 秒自動更新` : live.err ? '即時資料暫時讀不到' : '讀取到站時間中…';
+      el.textContent = ls ? `依到站時間排序・${hhmmss(live.at)} 更新，每 20 秒自動更新` : live.err ? '即時資料暫時讀不到' : '讀取到站時間中…';
     });
   }
 
