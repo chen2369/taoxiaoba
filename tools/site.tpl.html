@@ -1,0 +1,963 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>桃小巴路線圖</title>
+<meta name="description" content="桃園市桃小巴路線、站牌、班表與即時公車動態地圖">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/*MAPLIBRE_CSS*/
+</style>
+<style>
+/* Layout: map-first transit tool. Sidebar (search → filters → route list / route detail) beside a self-contained vector map; on phones the map sits above a scrolling panel. */
+:root {
+  --bg: #e9ece5;
+  --panel: #fafbf7;
+  --ink: #1b2320;
+  --muted: #5a6761;
+  --hair: #d3d9d0;
+  --c-t: #e05a3a;      /* 桃小巴 */
+  --c-o: #b4860f;      /* 舊編號小巴 */
+  --c-f: #2c7a57;      /* 復興幸福巴士 */
+  --go: #d23f22;
+  --back: #2f5fa3;
+  --land: #f5f6f1;
+  --outside: #d9dfd6;
+  --border: #97a39b;
+  --road-major: #e7c68a;
+  --road: #ffffff;
+  --road-minor: #ffffff;
+  --rail: #4b5550;
+  --mrt: #8246af;
+  --maplabel: #7b8781;
+  --stop-ring: #3d4843;
+  --flavor: light;
+  --icon-filter: none;
+  --eta-now: #d62828; --eta-soon: #c77700; --eta-later: #2a8a4a;
+  --h1: #d62828; --h2: #1d70b8; --h3: #2a9d4b; --h4: #8e44ad; --h5: #e67e00; --h6: #00897b; --h7: #c2185b; --h8: #6d4c41;
+  --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111614; --panel: #1a201d; --ink: #e5ebe7; --muted: #98a59e; --hair: #2d3531;
+    --c-t: #f27a58; --c-o: #d8ad3c; --c-f: #4fb489; --go: #ff7b57; --back: #74a9ff;
+    --land: #1e2421; --outside: #131816; --border: #56625b; --road-major: #6d5c38;
+    --road: #3a433f; --road-minor: #2e3632; --rail: #aeb8b3; --mrt: #b58ad9; --maplabel: #808c86; --stop-ring: #c4cfc9; --flavor: dark; --icon-filter: invert(1);
+    --eta-now: #e5484d; --eta-soon: #b86e00; --eta-later: #2f9e57;
+    --h1: #ff6b6b; --h2: #5aa9ff; --h3: #5fd38d; --h4: #c792ea; --h5: #ffb347; --h6: #4dd0c4; --h7: #f06292; --h8: #c8a27a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111614; --panel: #1a201d; --ink: #e5ebe7; --muted: #98a59e; --hair: #2d3531;
+  --c-t: #f27a58; --c-o: #d8ad3c; --c-f: #4fb489; --go: #ff7b57; --back: #74a9ff;
+  --land: #1e2421; --outside: #131816; --border: #56625b; --road-major: #6d5c38;
+  --road: #3a433f; --road-minor: #2e3632; --rail: #aeb8b3; --mrt: #b58ad9; --maplabel: #808c86; --stop-ring: #c4cfc9; --flavor: dark; --icon-filter: invert(1);
+    --eta-now: #e5484d; --eta-soon: #b86e00; --eta-later: #2f9e57;
+    --h1: #ff6b6b; --h2: #5aa9ff; --h3: #5fd38d; --h4: #c792ea; --h5: #ffb347; --h6: #4dd0c4; --h7: #f06292; --h8: #c8a27a;
+  color-scheme: dark;
+}
+
+html { height: 100%; box-sizing: border-box; padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+body { height: 100%; margin: 0; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--go); outline-offset: 2px; }
+
+.app {
+  height: 100%; box-sizing: border-box;
+  display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 12px;
+  padding: 12px 16px;
+}
+.side {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; overflow: hidden;
+}
+.mapwrap { position: relative; min-width: 0; min-height: 0; border: 1px solid var(--hair); border-radius: 10px; overflow: hidden; }
+.mapstatus { position: absolute; left: 10px; bottom: 26px; z-index: 1000; margin: 0; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--hair); background: var(--panel); color: var(--muted); font-size: 12px; pointer-events: none; }
+#map { width: 100%; height: 100%; }
+
+.brand { padding: 16px 18px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand h1 { margin: 0; font: 800 30px/1 var(--display); letter-spacing: 0.02em; text-wrap: balance; }
+.brand h1 b { color: var(--c-t); font-weight: 800; }
+.brand p { margin: 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+.controls { padding: 0 18px 12px; display: grid; gap: 10px; border-bottom: 1px solid var(--hair); }
+.search input {
+  width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--hair); background: var(--bg);
+}
+.search input::placeholder { color: var(--muted); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--hair); background: transparent; cursor: pointer; font-size: 13px; color: var(--muted);
+}
+.chip i { width: 14px; height: 4px; border-radius: 2px; background: currentColor; }
+.chip[data-cat="T"] i { background: var(--c-t); }
+.chip[data-cat="O"] i { background: var(--c-o); }
+.chip[data-cat="F"] i { background: var(--c-f); }
+.chip span { font-variant-numeric: tabular-nums; opacity: 0.75; }
+.chip[aria-pressed="true"] { color: var(--ink); background: var(--bg); border-color: var(--ink); }
+.chip[aria-pressed="false"] i { opacity: 0.35; }
+#town { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--hair); background: var(--bg); font-size: 13px; }
+
+.scroll { flex: 1; min-height: 0; overflow: auto; }
+.count { padding: 10px 18px 4px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+
+.ri {
+  display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 12px; align-items: start;
+  width: 100%; text-align: left; padding: 10px 18px; border: 0; border-bottom: 1px solid var(--hair);
+  background: transparent; cursor: pointer;
+}
+.ri:hover { background: var(--bg); }
+.ri-main { min-width: 0; display: grid; gap: 1px; }
+.ri-title { font-weight: 500; overflow-wrap: anywhere; }
+.ri-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ri-hit { font-size: 12.5px; color: var(--go); }
+
+.badge {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 52px; box-sizing: border-box;
+  padding: 3px 8px 2px; border-radius: 4px; color: #fff; background: var(--c-t);
+  font: 800 19px/1.05 var(--display); letter-spacing: 0.03em; white-space: nowrap; justify-self: start;
+}
+.badge.c-O { background: var(--c-o); }
+.badge.c-F { background: var(--c-f); }
+.badge.big { font-size: 34px; padding: 4px 12px 3px; min-width: 0; }
+
+.detail { padding-bottom: 8px; }
+.d-top { padding: 12px 18px 14px; display: grid; gap: 12px; border-bottom: 1px solid var(--hair); }
+.back { justify-self: start; border: 0; background: none; padding: 2px 0; color: var(--muted); cursor: pointer; font-size: 13px; }
+.back:hover { color: var(--ink); }
+.d-title { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.d-title > div { min-width: 0; flex: 1 1 160px; }
+.d-title h2 { margin: 0; font-size: 18px; line-height: 1.3; text-wrap: balance; }
+.d-title p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 13.5px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.tel { font-variant-numeric: tabular-nums; user-select: all; }
+.live { justify-self: start; font-size: 13.5px; color: var(--back); text-decoration: none; border-bottom: 1px solid currentColor; }
+
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--hair); background: transparent; cursor: pointer; font-size: 13.5px; color: var(--muted);
+}
+.seg button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: var(--bg); font-weight: 500; }
+.seg .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+.sec { padding: 14px 18px 4px; display: grid; gap: 10px; }
+.sec h3 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.times { display: flex; flex-wrap: wrap; gap: 6px; font-variant-numeric: tabular-nums; }
+.t { padding: 3px 8px; border-radius: 6px; background: var(--bg); font-size: 14px; }
+.t.past { color: var(--muted); opacity: 0.55; }
+.t.next { background: var(--go); color: #fff; font-weight: 700; }
+.t.next em { font-style: normal; font-weight: 500; font-size: 11.5px; margin-left: 5px; }
+.none { color: var(--muted); font-size: 13.5px; margin: 0; }
+.fine { margin: 0; font-size: 12px; color: var(--muted); }
+
+.stoplist { list-style: none; margin: 0; padding: 0; position: relative; }
+.stoplist li button {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; width: 100%;
+  border: 0; background: none; padding: 5px 0; text-align: left; cursor: pointer;
+}
+.stoplist li button:hover .sname { text-decoration: underline; }
+.sn {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; box-sizing: border-box;
+  border: 2px solid var(--stopc); background: var(--panel); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  position: relative; z-index: 1;
+}
+.stoplist li:first-child .sn, .stoplist li:last-child .sn { background: var(--stopc); color: #fff; }
+.stoplist::before { content: ""; position: absolute; left: 11px; top: 16px; bottom: 16px; width: 2px; background: var(--stopc); opacity: 0.5; }
+.sbody { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding-top: 1px; }
+.sname { overflow-wrap: anywhere; }
+.tag { font-size: 11.5px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--hair); color: var(--muted); white-space: nowrap; }
+.tag.rail { border-color: var(--rail); color: var(--ink); }
+.tag.mrt { border-color: var(--mrt); color: var(--mrt); }
+
+.note { padding: 14px 18px 18px; font-size: 12px; color: var(--muted); display: grid; gap: 6px; }
+.note p { margin: 0; }
+.empty { padding: 18px; color: var(--muted); margin: 0; }
+
+/* map chrome */
+#map { background: var(--outside); }
+.maplibregl-map { font-family: var(--body); }
+.maplibregl-ctrl-group { background: var(--panel); border: 1px solid var(--hair); }
+.maplibregl-ctrl-group:not(:empty) { box-shadow: none; }
+.maplibregl-ctrl-group button + button { border-top: 1px solid var(--hair); }
+.maplibregl-ctrl button .maplibregl-ctrl-icon { filter: var(--icon-filter); }
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib.maplibregl-compact { background: var(--panel); color: var(--muted); font-size: 10.5px; }
+.maplibregl-ctrl-attrib a { color: var(--muted); }
+.maplibregl-ctrl-attrib-button { filter: var(--icon-filter); }
+.maplibregl-popup-content { background: var(--panel); color: var(--ink); padding: 12px 14px; border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25); font-size: 13.5px; line-height: 1.5; }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip, .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip, .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: var(--panel); }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip, .maplibregl-popup-anchor-top-left .maplibregl-popup-tip, .maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: var(--panel); }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--panel); }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--panel); }
+.maplibregl-popup-close-button { color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 8px; }
+.maplibregl-popup-close-button:hover { background: var(--bg); }
+.hover-tip { pointer-events: none; }
+.hover-tip .maplibregl-popup-content { background: var(--ink); color: var(--panel); padding: 3px 8px; font-size: 12.5px; box-shadow: none; border-radius: 6px; }
+.hover-tip .maplibregl-popup-tip { display: none; }
+.pp { display: grid; gap: 4px; }
+.pp strong { font-size: 15px; padding-right: 18px; }
+.pp > span { color: var(--muted); }
+.pp a { color: var(--back); }
+.pp-n { font-size: 12.5px; }
+.pp-routes { display: grid; gap: 2px; max-height: min(320px, 36vh); overflow: auto; margin: 2px -4px; overscroll-behavior: contain; }
+.pr { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; width: 100%; text-align: left; border: 0; border-left: 4px solid var(--sw, transparent); background: none; padding: 5px 4px 5px 8px; border-radius: 0 6px 6px 0; cursor: pointer; color: var(--ink); }
+.pr:hover { background: var(--bg); }
+.pr-t { min-width: 0; display: grid; line-height: 1.35; }
+.pr-t > span { overflow-wrap: anywhere; color: var(--ink); }
+.pr-t small { font-size: 12px; color: var(--muted); }
+.badge.sm { font-size: 15px; min-width: 0; padding: 2px 6px 1px; }
+.stopview .pp strong { font-size: 18px; }
+.pr-dir { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 12px; color: var(--muted); }
+.pp-live { font-size: 12px; }
+.livebar { margin: 0; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.livebar::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--eta-later); margin-right: 6px; vertical-align: 1px; }
+.eta-slot:empty { display: none; }
+.eta { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; font-weight: 700; line-height: 1.6; white-space: nowrap; font-variant-numeric: tabular-nums; color: #fff; }
+.eta.now { background: var(--eta-now); }
+.eta.soon { background: var(--eta-soon); }
+.eta.later { background: var(--eta-later); }
+.eta.off { background: transparent; color: var(--muted); font-weight: 500; padding: 0; }
+.stopview .pp-routes { max-height: none; overflow: visible; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44% minmax(0, 1fr); gap: 10px; padding: 10px 16px 12px; }
+  .mapwrap { order: -1; }
+  .brand { padding: 12px 14px 8px; }
+  .brand h1 { font-size: 26px; }
+  .controls { padding: 0 14px 10px; }
+  .ri { padding: 10px 14px; grid-template-columns: 70px minmax(0, 1fr); }
+  .d-top, .sec, .count, .note { padding-left: 14px; padding-right: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <header class="brand">
+      <h1><b>桃</b>小巴路線圖</h1>
+      <p id="meta"></p>
+    </header>
+    <div class="controls" id="controls">
+      <label class="search"><input id="q" type="search" placeholder="搜尋路線、地名或站名，例如 T600、清華高中" autocomplete="off" aria-label="搜尋路線、地名或站名"></label>
+      <div class="row" role="group" aria-label="路線類別">
+        <button class="chip" id="cat-T" data-cat="T" aria-pressed="true"><i></i>桃小巴 <span></span></button>
+        <button class="chip" id="cat-O" data-cat="O" aria-pressed="true"><i></i>舊編號小巴 <span></span></button>
+        <button class="chip" id="cat-F" data-cat="F" aria-pressed="false"><i></i>復興幸福巴士 <span></span></button>
+      </div>
+      <div class="row">
+        <select id="town" aria-label="行政區"><option value="">全部行政區</option></select>
+      </div>
+    </div>
+    <div class="scroll" id="list"></div>
+    <div class="scroll detail" id="detail" hidden></div>
+  </aside>
+  <div class="mapwrap"><div id="map" role="application" aria-label="桃小巴路線地圖"></div><p class="mapstatus" id="mapstatus" role="status">底圖載入中…</p></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
+<script src="https://unpkg.com/@protomaps/basemaps@5.7.2/dist/basemaps.js"></script>
+<script type="application/json" id="data">/*DATA*/</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const FETCHED = '2026-10-05';
+
+  function decode(s) {
+    const pts = []; let i = 0, lat = 0, lng = 0;
+    while (i < s.length) {
+      let b, sh = 0, r = 0;
+      do { b = s.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32);
+      lat += (r & 1) ? ~(r >> 1) : (r >> 1);
+      sh = 0; r = 0;
+      do { b = s.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32);
+      lng += (r & 1) ? ~(r >> 1) : (r >> 1);
+      pts.push([lat / 1e5, lng / 1e5]);
+    }
+    return pts;
+  }
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  const CAT = { T: { name: '桃小巴', tok: '--c-t' }, O: { name: '舊編號小巴', tok: '--c-o' }, F: { name: '復興幸福巴士', tok: '--c-f' } };
+  const ORDER = { T: 0, O: 1, F: 2 };
+  const R = D.routes.map(r => {
+    const shp = r.s.map(s => (s ? decode(s) : []));
+    const dirs = [0, 1].filter(k => r.st[k].length || shp[k].length);
+    return Object.assign(r, { shp, dirs, loop: r.a === r.b });
+  }).sort((a, b) => ORDER[a.c] - ORDER[b.c] || a.n.localeCompare(b.n, 'zh-Hant', { numeric: true }));
+  const byId = Object.fromEntries(R.map(r => [r.id, r]));
+  const STN = D.base.stations; // [name, lat, lng, kind]
+
+  const metres = (la1, lo1, la2, lo2) => Math.hypot((lo1 - lo2) * 101000, (la1 - la2) * 110800);
+  const nearStations = (la, lo) => STN.filter(s => metres(la, lo, s[1], s[2]) < 400);
+
+  // One dot per stop: poles with the same name within 250 m (e.g. both sides of a road) merge.
+  // g.routes maps route -> [[direction, index], ...]; r.gid[k][i] points back to the dot.
+  const groups = [], byName = new Map();
+  R.forEach(r => {
+    r.gid = [[], []];
+    r.st.forEach((list, k) => list.forEach(([n, la, lo], i) => {
+      const same = byName.get(n) || [];
+      let g = same.find(x => metres(la, lo, x.la0, x.lo0) < 250);
+      if (!g) {
+        g = { name: n, la0: la, lo0: lo, sla: 0, slo: 0, cnt: 0, routes: new Map() };
+        groups.push(g); same.push(g); byName.set(n, same);
+      }
+      g.sla += la; g.slo += lo; g.cnt++;
+      if (!g.routes.has(r)) g.routes.set(r, []);
+      g.routes.get(r).push([k, i]);
+      r.gid[k][i] = g;
+    }));
+  });
+  groups.forEach(g => { g.la = g.sla / g.cnt; g.lo = g.slo / g.cnt; });
+
+  const now = new Date();
+  const todayType = (now.getDay() === 0 || now.getDay() === 6) ? 'we' : 'wk';
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+  const state = { cats: { T: true, O: true, F: false }, town: '', q: '', sel: null, dir: 0, day: todayType, fallback: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem('tsb-filters') || 'null');
+    if (saved && saved.cats) { state.cats = Object.assign(state.cats, saved.cats); state.town = saved.town || ''; }
+  } catch (e) {}
+  const saveFilters = () => { try { localStorage.setItem('tsb-filters', JSON.stringify({ cats: state.cats, town: state.town })); } catch (e) {} };
+
+  const $ = id => document.getElementById(id);
+  const listEl = $('list'), detailEl = $('detail'), controlsEl = $('controls');
+
+  // ---------- map: MapLibre GL draws on the GPU, so panning and zooming stay smooth on phones ----------
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const narrow = matchMedia('(max-width: 760px)');
+  const ll = ([la, lo]) => [lo, la];
+  const fc = features => ({ type: 'FeatureCollection', features });
+  const feat = (geometry, properties = {}, id) => ({ type: 'Feature', id, properties, geometry });
+  const boundsOf = pts => {
+    let w = 180, s = 90, e = -180, n = -90;
+    for (const [la, lo] of pts) { if (lo < w) w = lo; if (lo > e) e = lo; if (la < s) s = la; if (la > n) n = la; }
+    return [[w, s], [e, n]];
+  };
+  const statusEl = $('mapstatus');
+  let map = null, ready = false, popup = null, tip = null, focusPt = null;
+  // Routes lit up by the tapped stop, each in its own color: [{ id, color }]
+  const HI_TOKENS = ['--h1', '--h2', '--h3', '--h4', '--h5', '--h6', '--h7', '--h8'];
+  let hi = [];
+  const hiFilter = () => inList('rid', hi.map(h => h.id));
+  const hiColor = () => (hi.length ? ['match', ['get', 'rid']].concat(hi.flatMap(h => [h.id, h.color]), '#888888') : '#888888');
+
+  // Basemap: OpenStreetMap vector tiles (Protomaps) cropped to Taoyuan, max zoom 14. Read by byte range;
+  // if the host ignores Range, the first response is the whole file and later reads come from memory.
+  const busy = new Set();
+  const showBusy = () => { statusEl.hidden = !busy.size; if (busy.size) statusEl.textContent = [...busy].pop(); };
+  class TileFile {
+    constructor(url) { this.url = url; this.probe = null; this.whole = null; }
+    getKey() { return this.url; }
+    async read(offset, length) {
+      const resp = await fetch(this.url, { headers: { Range: `bytes=${offset}-${offset + length - 1}` } });
+      if (!resp.ok) throw new Error('basemap HTTP ' + resp.status);
+      if (resp.status === 206) return resp.arrayBuffer();
+      busy.add('底圖下載中…'); showBusy();
+      try { this.whole = await resp.arrayBuffer(); } finally { busy.delete('底圖下載中…'); showBusy(); }
+      return this.whole.slice(offset, offset + length);
+    }
+    async getBytes(offset, length) {
+      if (!this.probe) { this.probe = this.read(offset, length); return { data: await this.probe }; }
+      await this.probe;
+      return { data: this.whole ? this.whole.slice(offset, offset + length) : await this.read(offset, length) };
+    }
+  }
+  const archive = new pmtiles.PMTiles(new TileFile('basemap.pmtiles'));
+  const protocol = new pmtiles.Protocol();
+  protocol.add(archive);
+  maplibregl.addProtocol('pmtiles', protocol.tile);
+  // Label glyphs: Chinese is drawn with the device's own font; digits and Latin letters come from a small bundled font file.
+  let glyphs = null;
+  maplibregl.addProtocol('glyphs', async params => {
+    glyphs = glyphs || fetch('glyphs.json').then(r => r.json()).catch(() => ({}));
+    const g = (await glyphs)[params.url.match(/(\d+-\d+)$/)[1]];
+    return { data: g ? b64ToBytes(g).buffer : new ArrayBuffer(0) };
+  });
+  function b64ToBytes(s) {
+    if (Uint8Array.fromBase64) return Uint8Array.fromBase64(s);
+    const bin = atob(s), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return u8;
+  }
+
+  // Overlay data as GeoJSON
+  const B = D.base;
+  const lines = [];   // one entry per drawn route direction
+  R.forEach(r => r.dirs.forEach(k => { if (r.shp[k].length) lines.push({ r, k }); }));
+  const lineOf = list => list.map(s => decode(s).map(ll));
+  const ROUTES = fc(lines.map(({ r, k }, i) => feat({ type: 'LineString', coordinates: r.shp[k].map(ll) }, { rid: r.id, cat: r.c, tip: `${r.n}　${r.d}` }, i)));
+  const STOPS = fc(groups.map((g, gi) => feat({ type: 'Point', coordinates: [g.lo, g.la] }, { gi, name: g.name }, gi)));
+  const signedArea = c => { let a = 0; for (let i = 0; i < c.length - 1; i++) a += c[i][0] * c[i + 1][1] - c[i + 1][0] * c[i][1]; return a; };
+  const wind = (c, ccw) => ((signedArea(c) > 0) === ccw ? c : c.slice().reverse());
+  // Everything outside Taoyuan is dimmed: a world-sized polygon with the city outline cut out (hole winds the other way).
+  const MASK = fc([feat({ type: 'Polygon', coordinates: [wind([[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]], true)].concat(lineOf(B.outline).map(c => wind(c, false))) })]);
+  const BORDERS = fc([feat({ type: 'MultiLineString', coordinates: lineOf(B.borders) })]);
+  const METRO = fc([feat({ type: 'MultiLineString', coordinates: lineOf(B.metro) })]);
+  const STATIONS = fc(STN.map(([n, la, lo, kind]) => feat({ type: 'Point', coordinates: [lo, la] }, { name: n, kind })));
+  const DISTRICTS = fc(B.labels.map(([n, la, lo]) => feat({ type: 'Point', coordinates: [lo, la] }, { name: n.replace(/區$/, '') })));
+  // Main roads from the bundled data, drawn only if the basemap files cannot load.
+  const FALLBACK = fc(['secondary', 'primary', 'motorway', 'trunk'].map(cls => feat({ type: 'MultiLineString', coordinates: lineOf(B.roads[cls]) }, { cls }))
+    .concat(feat({ type: 'MultiLineString', coordinates: lineOf(B.rail) }, { cls: 'rail' })));
+
+  function selData() {
+    const r = state.sel; if (!r) return fc([]);
+    const k = state.dir, other = r.dirs.find(d => d !== k), out = [];
+    if (other !== undefined && r.shp[other].length) out.push(feat({ type: 'LineString', coordinates: r.shp[other].map(ll) }, { role: 'other', k: other }));
+    if (r.shp[k].length) out.push(feat({ type: 'LineString', coordinates: r.shp[k].map(ll) }, { role: 'active', k }));
+    return fc(out);
+  }
+  const focusData = () => fc(focusPt ? [feat({ type: 'Point', coordinates: focusPt })] : []);
+  function setFocus(pt) {
+    focusPt = pt;
+    if (ready) try { map.getSource('focus').setData(focusData()); } catch (e) {}
+  }
+  function selStopData() {
+    const r = state.sel; if (!r) return fc([]);
+    const k = state.dir, st = r.st[k];
+    return fc(st.map(([n, la, lo], i) => feat({ type: 'Point', coordinates: [lo, la] }, { i, k, end: i === 0 || i === st.length - 1, label: `${i + 1}. ${n}` }, i)));
+  }
+
+  // What the current filters show: route ids (minus the selected one), stop dots, and stop dots matching the search.
+  let view = { routes: new Set(), ids: [], gis: [], hits: [] };
+  function computeView() {
+    const routes = new Set(R.filter(shown)), q = state.q.trim().toLowerCase(), gis = [], hits = [];
+    groups.forEach((g, gi) => {
+      for (const r of g.routes.keys()) if (routes.has(r)) { gis.push(gi); if (q && g.name.toLowerCase().includes(q)) hits.push(gi); break; }
+    });
+    view = { routes, ids: [...routes].filter(r => r !== state.sel).map(r => r.id), gis, hits };
+    $('meta').textContent = `${routes.size} 條路線・${gis.length} 個站牌・資料 ${FETCHED}`;
+  }
+  const inList = (prop, list) => ['in', ['get', prop], ['literal', list]];
+
+  const FONT = ['Noto Sans Medium'];
+  const STOP_R = ['step', ['zoom'], 1.6, 10, 2.4, 11.5, 3.4, 13.5, 4.6];
+  const HIT_R = ['step', ['zoom'], 3.6, 10, 4.4, 11.5, 5.4, 13.5, 6.6];
+  const ROUND = { 'line-join': 'round', 'line-cap': 'round' };
+  function buildStyle() {
+    const t = tok, flavor = t('--flavor') || 'light';
+    const dir = ['match', ['get', 'k'], 0, t('--go'), t('--back')], fade = state.sel || hi.length ? 0.55 : 1;
+    const halo = { 'text-halo-color': t('--land'), 'text-halo-width': 1.5 };
+    const base = state.fallback ? [
+      { id: 'bg', type: 'background', paint: { 'background-color': t('--land') } },
+      { id: 'fb-minor', type: 'line', source: 'fallback', filter: ['==', ['get', 'cls'], 'secondary'], paint: { 'line-color': t('--road-minor'), 'line-width': 1 } },
+      { id: 'fb-primary', type: 'line', source: 'fallback', filter: ['==', ['get', 'cls'], 'primary'], paint: { 'line-color': t('--road'), 'line-width': 1.8 } },
+      { id: 'fb-major', type: 'line', source: 'fallback', filter: inList('cls', ['motorway', 'trunk']), paint: { 'line-color': t('--road-major'), 'line-width': 2.6 } },
+      { id: 'fb-rail', type: 'line', source: 'fallback', filter: ['==', ['get', 'cls'], 'rail'], paint: { 'line-color': t('--rail'), 'line-width': 2 } },
+    ] : basemaps.layers('protomaps', basemaps.namedFlavor(flavor));
+    // Basemap labels go above the route lines so road names stay readable; the outside-Taoyuan mask dims them, and stop dots sit above everything.
+    const labels = state.fallback ? [] : basemaps.layers('protomaps', basemaps.namedFlavor(flavor), { labelsOnly: true, lang: 'zh-Hant' });
+    return {
+      version: 8,
+      glyphs: 'glyphs://{fontstack}/{range}',
+      sources: {
+        protomaps: { type: 'vector', url: 'pmtiles://basemap.pmtiles' },
+        fallback: { type: 'geojson', data: FALLBACK },
+        mask: { type: 'geojson', data: MASK },
+        borders: { type: 'geojson', data: BORDERS },
+        metro: { type: 'geojson', data: METRO },
+        stations: { type: 'geojson', data: STATIONS },
+        districts: { type: 'geojson', data: DISTRICTS },
+        routes: { type: 'geojson', data: ROUTES },
+        stops: { type: 'geojson', data: STOPS },
+        sel: { type: 'geojson', data: selData() },
+        selstops: { type: 'geojson', data: selStopData() },
+        focus: { type: 'geojson', data: focusData() },
+        buses: { type: 'geojson', data: busData(live.route && live.route.r === state.sel ? live.route : null) },
+      },
+      layers: base.concat([
+        { id: 'borders', type: 'line', source: 'borders', paint: { 'line-color': t('--border'), 'line-width': 1.2, 'line-dasharray': [3, 2.5] } },
+        { id: 'metro', type: 'line', source: 'metro', layout: ROUND, paint: { 'line-color': t('--mrt'), 'line-width': 2.4, 'line-opacity': 0.7 } },
+        { id: 'routes', type: 'line', source: 'routes', filter: inList('rid', view.ids), layout: ROUND,
+          paint: { 'line-color': ['match', ['get', 'cat'], 'T', t('--c-t'), 'O', t('--c-o'), t('--c-f')], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 3.6], 'line-opacity': state.sel || hi.length ? 0.18 : 0.85 } },
+        { id: 'routes-hi-casing', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': 7.5, 'line-opacity': 0.9 } },
+        { id: 'routes-hi', type: 'line', source: 'routes', filter: hiFilter(), layout: ROUND, paint: { 'line-color': hiColor(), 'line-width': 4.5 } },
+        { id: 'sel-other', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'other'], layout: ROUND, paint: { 'line-color': dir, 'line-width': 3, 'line-opacity': 0.55, 'line-dasharray': [2, 2] } },
+        { id: 'sel-casing', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'active'], layout: ROUND, paint: { 'line-color': t('--land'), 'line-width': 9, 'line-opacity': 0.9 } },
+        { id: 'sel-active', type: 'line', source: 'sel', filter: ['==', ['get', 'role'], 'active'], layout: ROUND, paint: { 'line-color': dir, 'line-width': 5 } },
+      ], labels, [
+        { id: 'mask', type: 'fill', source: 'mask', paint: { 'fill-color': t('--outside'), 'fill-opacity': 0.88 } },
+        { id: 'stations', type: 'circle', source: 'stations',
+          paint: { 'circle-radius': ['match', ['get', 'kind'], 'hsr', 5, 4], 'circle-color': ['match', ['get', 'kind'], 'hsr', t('--rail'), t('--panel')], 'circle-stroke-color': ['match', ['get', 'kind'], 'mrt', t('--mrt'), t('--rail')], 'circle-stroke-width': 2 } },
+        { id: 'stops', type: 'circle', source: 'stops', filter: inList('gi', view.gis),
+          paint: { 'circle-radius': STOP_R, 'circle-color': t('--panel'), 'circle-stroke-color': t('--stop-ring'), 'circle-stroke-width': 1.4, 'circle-opacity': fade, 'circle-stroke-opacity': fade } },
+        { id: 'stops-hit', type: 'circle', source: 'stops', filter: inList('gi', view.hits),
+          paint: { 'circle-radius': HIT_R, 'circle-color': t('--go'), 'circle-stroke-color': t('--panel'), 'circle-stroke-width': 1.5 } },
+        { id: 'sel-stops', type: 'circle', source: 'selstops',
+          paint: { 'circle-radius': ['case', ['get', 'end'], 7, 5], 'circle-color': ['case', ['get', 'end'], dir, t('--panel')], 'circle-stroke-color': dir, 'circle-stroke-width': 2.5 } },
+        { id: 'buses', type: 'circle', source: 'buses', paint: { 'circle-radius': 10, 'circle-color': dir, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } },
+        { id: 'buses-arrow', type: 'symbol', source: 'buses', layout: { 'icon-image': 'bus-arrow', 'icon-rotate': ['get', 'az'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } },
+        { id: 'focus', type: 'circle', source: 'focus', paint: { 'circle-radius': 11, 'circle-opacity': 0, 'circle-stroke-color': t('--go'), 'circle-stroke-width': 3 } },
+        { id: 'districts', type: 'symbol', source: 'districts', maxzoom: state.fallback ? 24 : 9.5,
+          layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 15, 'text-letter-spacing': 0.3 }, paint: Object.assign({ 'text-color': t('--maplabel') }, halo) },
+        { id: 'stations-label', type: 'symbol', source: 'stations', minzoom: 11, maxzoom: state.fallback ? 24 : 13,
+          layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 12, 'text-anchor': 'left', 'text-offset': [0.7, 0] },
+          paint: Object.assign({ 'text-color': ['match', ['get', 'kind'], 'mrt', t('--mrt'), t('--ink')] }, halo) },
+        { id: 'sel-labels', type: 'symbol', source: 'selstops', minzoom: 13.5,
+          layout: { 'text-field': ['get', 'label'], 'text-font': FONT, 'text-size': 12.5, 'text-anchor': 'left', 'text-offset': [0.9, 0] },
+          paint: { 'text-color': t('--ink'), 'text-halo-color': t('--panel'), 'text-halo-width': 2 } },
+      ]),
+    };
+  }
+
+  // Clicks and hovers pick the closest thing under the finger, preferring selected stops, then stop dots, then lines.
+  const HIT_LAYERS = ['buses', 'sel-stops', 'stops-hit', 'stops', 'routes-hi', 'routes'];
+  function hitAt(p, pad = 9) {
+    if (!ready) return null;
+    const fs = map.queryRenderedFeatures([[p.x - pad, p.y - pad], [p.x + pad, p.y + pad]], { layers: HIT_LAYERS });
+    for (const id of HIT_LAYERS) {
+      const c = fs.filter(f => f.layer.id === id);
+      if (!c.length) continue;
+      if (id === 'routes' || id === 'routes-hi') return c[0];
+      let best = null, bd = Infinity;
+      for (const f of c) { const q = map.project(f.geometry.coordinates), d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2; if (d < bd) { bd = d; best = f; } }
+      return best;
+    }
+    return null;
+  }
+
+  // White arrow drawn inside each bus dot, rotated to the bus heading
+  function arrowImage() {
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const x = c.getContext('2d'); x.fillStyle = '#ffffff';
+    x.beginPath(); x.moveTo(16, 5); x.lineTo(25, 25); x.lineTo(16, 20); x.lineTo(7, 25); x.closePath(); x.fill();
+    return { width: 32, height: 32, data: new Uint8Array(x.getImageData(0, 0, 32, 32).data.buffer) };
+  }
+
+  function initMap() {
+    computeView();
+    map = new maplibregl.Map({
+      container: 'map', style: buildStyle(),
+      bounds: boundsOf(R.filter(r => r.c !== 'F').flatMap(r => r.shp.flat())), fitBoundsOptions: { padding: 12 },
+      maxBounds: [[120.6, 24.35], [121.9, 25.4]], minZoom: 8, maxZoom: 18,
+      dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: false,
+      localIdeographFontFamily: '"PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", sans-serif',
+    });
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.addControl(new maplibregl.AttributionControl({ compact: narrow.matches, customAttribution: '底圖 © OpenStreetMap 貢獻者・Protomaps｜路線 桃園市公車動態資訊系統' }), 'bottom-right');
+    map.on('styleimagemissing', e => {
+      if (map.hasImage(e.id)) return;
+      if (e.id === 'bus-arrow') map.addImage(e.id, arrowImage(), { pixelRatio: 2 });
+      else map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+    });
+    map.on('load', () => {
+      ready = true; updateLines(); drawSel(); setFocus(focusPt);
+      const attrib = map.getContainer().querySelector('.maplibregl-ctrl-attrib');
+      if (attrib) attrib.classList.remove('maplibregl-compact-show');
+    });
+    map.once('idle', () => { if (!busy.size) statusEl.hidden = true; });
+
+    map.on('click', e => {
+      const f = hitAt(e.point);
+      if (!f) { if (state.stopView) closeStopView(); return; }
+      const id = f.layer.id;
+      if (id === 'buses') return;
+      if (id === 'sel-stops') { const r = state.sel, k = state.dir, i = f.properties.i; openStop(r.gid[k][i], { r, k, i }); }
+      else if (id === 'routes' || id === 'routes-hi') select(f.properties.rid);
+      else openStop(groups[f.properties.gi]);
+    });
+    tip = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: 'hover-tip', offset: 10, maxWidth: '260px' });
+    let raf = 0;
+    map.on('mousemove', e => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const f = hitAt(e.point, 5);
+        map.getCanvas().style.cursor = f ? 'pointer' : '';
+        const line = f && (f.layer.id === 'routes' || f.layer.id === 'routes-hi');
+        const text = !f ? '' : line || f.layer.id === 'buses' ? f.properties.tip : f.layer.id === 'sel-stops' ? f.properties.label : groups[f.properties.gi].name;
+        if (text && (!popup || line)) tip.setLngLat(line ? e.lngLat : f.geometry.coordinates).setText(text).addTo(map);
+        else tip.remove();
+      });
+    });
+    map.getCanvas().addEventListener('mouseleave', () => tip.remove());
+    // Route buttons inside a stop popup
+    map.getContainer().addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) select(b.dataset.go); });
+    archive.getHeader().catch(useFallback);
+  }
+
+  function useFallback() {
+    state.fallback = true;
+    if (map) map.setStyle(buildStyle());
+    busy.clear();
+    statusEl.textContent = '詳細底圖載入失敗，先顯示主要道路';
+    statusEl.hidden = false;
+    setTimeout(() => { statusEl.hidden = true; }, 6000);
+  }
+
+  // ---------- filtering ----------
+  function match(r) {
+    const q = state.q.trim().toLowerCase();
+    if (!q) return { ok: true };
+    const txt = [r.n, r.d, r.a, r.b, r.op].concat(r.tw).join(' ').toLowerCase();
+    if (txt.includes(q)) return { ok: true };
+    for (const list of r.st) for (const s of list) if (s[0].toLowerCase().includes(q)) return { ok: true, hit: s[0] };
+    return { ok: false };
+  }
+  const passesFilters = r => state.cats[r.c] && (!state.town || r.tw.includes(state.town));
+  const shown = r => passesFilters(r) && match(r).ok;
+
+  // Apply filter/selection changes to the map without rebuilding the style.
+  function updateLines() {
+    computeView();
+    if (!ready) return;
+    const dim = state.sel || hi.length, fade = dim ? 0.55 : 1;
+    try {
+      map.setFilter('routes', inList('rid', view.ids));
+      map.setPaintProperty('routes', 'line-opacity', dim ? 0.18 : 0.85);
+      map.setFilter('routes-hi', hiFilter());
+      map.setFilter('routes-hi-casing', hiFilter());
+      map.setPaintProperty('routes-hi', 'line-color', hiColor());
+      map.setFilter('stops', inList('gi', view.gis));
+      map.setFilter('stops-hit', inList('gi', view.hits));
+      map.setPaintProperty('stops', 'circle-opacity', fade);
+      map.setPaintProperty('stops', 'circle-stroke-opacity', fade);
+    } catch (e) { map.once('styledata', updateLines); }
+  }
+
+  function setStopHi(g) {
+    hi = g ? [...g.routes.keys()].filter(r => r !== state.sel).map((r, i) => ({ id: r.id, color: tok(HI_TOKENS[i % HI_TOKENS.length]) })) : [];
+    updateLines();
+  }
+
+  function drawSel() {
+    if (!ready) return;
+    try {
+      map.getSource('sel').setData(selData());
+      map.getSource('selstops').setData(selStopData());
+    } catch (e) { map.once('styledata', drawSel); }
+  }
+
+  const towardLabel = (r, k) => r.dirs.length === 1 ? (r.loop ? '循環線' : `${r.a} → ${r.b}`) : `往 ${k === 0 ? r.b : r.a}`;
+
+  // Where this stop sits on route r: "往 X（起點）", "循環線（起訖站）" …
+  function stopRole(r, k, i) {
+    const last = r.st[k].length - 1;
+    if (r.dirs.length === 1 && r.loop) return '循環線' + (i === 0 || i === last ? '（起訖站）' : '');
+    return towardLabel(r, k) + (i === 0 ? '（起點）' : i === last ? '（終點）' : '');
+  }
+
+  const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+
+  // Popup listing every route that stops here; ctx = {r, k, i} when opened from the selected route.
+  function openStop(g, ctx) {
+    closePopup(); if (tip) tip.remove();
+    setStopHi(g);
+    const [la, lo] = ctx ? ctx.r.st[ctx.k][ctx.i].slice(1) : [g.la, g.lo];
+    setFocus([lo, la]);
+    const colorOf = r => (r === state.sel ? tok(state.dir === 0 ? '--go' : '--back') : hi.find(h => h.id === r.id).color);
+    const targets = stopTargets(g);
+    liveStop = { g, targets };
+    const rows = [...g.routes].map(([r]) => {
+      const dirs = targets.map((x, idx) => [x, idx]).filter(([x]) => x.r === r)
+        .map(([x, idx]) => `<small class="pr-dir">${esc(stopRole(r, x.k, x.i))} <span data-seta="${idx}"></span></small>`).join('');
+      return `<button class="pr" data-go="${r.id}" style="--sw:${colorOf(r)}"><span class="badge sm c-${r.c}">${esc(r.n)}</span>
+        <span class="pr-t"><span>${esc(r.d)}</span>${dirs}</span></button>`;
+    }).join('');
+    const html = `<div class="pp">
+      <strong>${esc(g.name)}</strong>
+      ${ctx ? `<span>${esc(ctx.r.n)} 第 ${ctx.i + 1} 站・${esc(towardLabel(ctx.r, ctx.k))}</span>` : ''}
+      <span class="pp-n">${g.routes.size} 條路線經過，地圖上同色的線就是它・點路線看全線</span>
+      <span class="pp-live" data-sbar>讀取到站時間中…</span>
+      <div class="pp-routes">${rows}</div>
+      <a href="https://www.google.com/maps/search/?api=1&query=${la.toFixed(6)},${lo.toFixed(6)}" target="_blank" rel="noopener">在 Google 地圖開啟 ↗</a>
+    </div>`;
+    if (narrow.matches) {
+      // On phones the map is too short for a popup, so the list goes in the panel below it.
+      state.stopView = true;
+      detailEl.innerHTML = `<div class="d-top stopview"><button class="back" data-back-stop>← ${state.sel ? `回到 ${esc(state.sel.n)}` : '全部路線'}</button>${html}</div>` + NOTE;
+      showDetail(true); detailEl.scrollTop = 0;
+      map.easeTo({ center: [lo, la], duration: reduceMotion ? 0 : 400 });
+      pollLive();
+      return;
+    }
+    const mine = popup = new maplibregl.Popup({ maxWidth: '300px', offset: 12, focusAfterOpen: false }).setLngLat([lo, la]).setHTML(html).addTo(map);
+    popup.on('close', () => { if (popup === mine) { popup = null; setStopHi(null); setFocus(null); liveStop = null; pollLive(); } });
+    pollLive();
+  }
+
+  // ---------- real-time: 桃園市公車動態資訊系統 (its API allows reads from any website) ----------
+  const API = 'https://ebus.tycg.gov.tw/ebus/graphql';
+  const LIVE_EVERY = 20000;
+  const ETA_FIELDS = 'id goBack comeTime isSuspended isConstruction isEvent isOperationDay etas{etaTime}';
+  const Q_ROUTE = `query($id:Int!,$lang:String!){route(xno:$id,lang:$lang){buses{edges{goBack node{id lat lon azimuth}}} estimateTimes{edges{node{${ETA_FIELDS}}}}}}`;
+  const Q_STOP = `query($t:[EstimateStationInput!]!){stationEstimates(targets:$t){edges{node{${ETA_FIELDS}}}}}`;
+  async function gql(query, variables, signal) {
+    const resp = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }), signal });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const j = await resp.json();
+    if (!j.data) throw new Error('no data');
+    return j.data;
+  }
+  // Same states and wording as the official site
+  function eta(n) {
+    if (!n) return null;
+    if (!n.isOperationDay) return ['今日未營運', 'off'];
+    if (n.isSuspended) return ['末班駛離', 'off'];
+    if (n.isConstruction || n.isEvent) return ['改道不停靠', 'off'];
+    if (n.etas.length) {
+      const m = Math.min(...n.etas.map(e => e.etaTime));
+      return m <= 0 ? ['進站中', 'now'] : m < 3 ? ['即將到站', 'now'] : [`${m} 分`, 'soon'];
+    }
+    if (/^\d{1,2}:\d{2}$/.test(n.comeTime)) return [`約 ${n.comeTime}`, 'later'];
+    if (n.comeTime) return [n.comeTime, 'now'];
+    return ['未發車', 'off'];
+  }
+  const etaHtml = n => { const e = eta(n); return e ? `<span class="eta ${e[1]}">${esc(e[0])}</span>` : ''; };
+  const hhmmss = d => d.toLocaleTimeString('zh-TW', { hour12: false });
+
+  const live = { timer: 0, ctrl: null, route: null, stop: null, at: null, err: false };
+  let liveStop = null;   // the stop whose arrivals are shown: { g, targets: [{ r, k, i, sid }] }
+  function stopTargets(g) {
+    const seen = new Set(), out = [];
+    for (const [r, hits] of g.routes) for (const [k, i] of hits) {
+      const sid = r.st[k][i][3], key = `${r.id}:${k}:${sid}`;
+      if (sid && !seen.has(key)) { seen.add(key); out.push({ r, k, i, sid }); }
+    }
+    return out;
+  }
+  function busData(lr) {
+    if (!lr) return fc([]);
+    return fc(lr.buses.map(b => feat({ type: 'Point', coordinates: [b.lon, b.lat] }, { k: b.k, az: b.az, tip: `${b.plate}・${towardLabel(lr.r, b.k)}` })));
+  }
+  // One request for the selected route (buses + every stop's arrival) and one for the open stop; every 20 s while visible.
+  async function pollLive() {
+    clearTimeout(live.timer);
+    if (live.ctrl) live.ctrl.abort();
+    const r = state.sel, s = liveStop;
+    if (!r && !s) { live.route = live.stop = null; renderLive(); return; }
+    if (document.hidden) return;
+    const ctrl = live.ctrl = new AbortController();
+    try {
+      await Promise.all([
+        r && gql(Q_ROUTE, { id: +r.id, lang: 'zh' }, ctrl.signal).then(d => {
+          const etas = new Map();
+          for (const { node } of d.route.estimateTimes.edges) etas.set(`${node.id}:${node.goBack}`, node);
+          live.route = { r, etas, buses: d.route.buses.edges.map(({ goBack, node }) => ({ k: goBack - 1, plate: node.id, lat: node.lat, lon: node.lon, az: node.azimuth || 0 })) };
+        }),
+        s && s.targets.length && gql(Q_STOP, { t: s.targets.map(x => ({ xno: +x.r.id, stationId: x.sid, goBack: x.k + 1 })) }, ctrl.signal).then(d => {
+          live.stop = { s, nodes: d.stationEstimates.edges.map(e => e.node) };   // same order as the targets
+        }),
+      ]);
+      live.at = new Date(); live.err = false;
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      live.err = true;
+    }
+    renderLive();
+    live.timer = setTimeout(pollLive, LIVE_EVERY);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pollLive(); });
+
+  function renderLive() {
+    const lr = live.route && live.route.r === state.sel ? live.route : null;
+    if (ready) try { map.getSource('buses').setData(busData(lr)); } catch (e) {}
+    const bar = document.getElementById('livebar');
+    if (bar) {
+      if (!lr) bar.textContent = live.err ? '即時資料暫時讀不到，20 秒後自動重試' : '即時動態讀取中…';
+      else {
+        const n = lr.buses.length;
+        bar.textContent = `即時：${n ? `${n} 台車在路上` : '目前沒有車在路上'}・${hhmmss(live.at)} 更新${live.err ? '（最新一次讀取失敗）' : ''}`;
+      }
+    }
+    document.querySelectorAll('[data-eta]').forEach(el => { el.innerHTML = lr ? etaHtml(lr.etas.get(el.dataset.eta)) : ''; });
+    const ls = live.stop && live.stop.s === liveStop ? live.stop : null;
+    document.querySelectorAll('[data-seta]').forEach(el => { el.innerHTML = ls ? etaHtml(ls.nodes[+el.dataset.seta]) : ''; });
+    document.querySelectorAll('[data-sbar]').forEach(el => {
+      el.textContent = ls ? `到站時間 ${hhmmss(live.at)} 更新・每 20 秒自動更新` : live.err ? '即時資料暫時讀不到' : '讀取到站時間中…';
+    });
+  }
+
+  // ---------- sidebar ----------
+  const tripCount = r => [Math.max(r.wk[0].length, r.wk[1].length), Math.max(r.we[0].length, r.we[1].length)];
+  function freqText(r) {
+    const [wk, we] = tripCount(r);
+    if (!wk && !we) return '查無班表';
+    if (!wk) return `平日停駛・假日 ${we} 班`;
+    if (!we) return `平日 ${wk} 班・假日停駛`;
+    return `平日 ${wk} 班・假日 ${we} 班`;
+  }
+
+  const NOTE = `<div class="note">
+    <p>路線、站牌與班表抓自桃園市公車動態資訊系統（${FETCHED}）。班表是 10/7（三）與 10/11（日）的起點站發車時刻，國定假日與臨時異動以官方公告為準。</p>
+    <p>官方系統把桃小巴和幸福巴士歸在同一類。T 字頭與 5028、5083、5084、5085 已由新聞確認是九人座桃小巴；「舊編號小巴」是同一類別裡其餘沿用舊編號的路線。</p>
+    <p>即時動態（公車位置、預估到站）同樣來自桃園市公車動態資訊系統，選路線或點站牌後每 20 秒自動更新。</p>
+    <p>同名、相距 250 公尺內的站牌（例如馬路兩側）合成一個圓點，所以一個圓點可能同時是去程和返程的站。</p>
+  </div>`;
+
+  function renderList() {
+    const rows = R.filter(shown);
+    ['T', 'O', 'F'].forEach(c => {
+      const b = $('cat-' + c);
+      b.setAttribute('aria-pressed', String(state.cats[c]));
+      b.querySelector('span').textContent = R.filter(r => r.c === c && (!state.town || r.tw.includes(state.town)) && match(r).ok).length;
+    });
+    if (!rows.length) {
+      listEl.innerHTML = `<p class="empty">沒有符合的路線。試試站名的一部分（例如「區公所」），或把上面的類別打開。</p>` + NOTE;
+      return;
+    }
+    listEl.innerHTML = `<div class="count">點路線看站牌、班表和即時公車位置。地圖上的圓點是站牌，點一下會列出經過的路線和多久到站</div>` + rows.map(r => {
+      const m = match(r);
+      return `<button class="ri" data-id="${r.id}">
+        <span class="badge c-${r.c}">${esc(r.n)}</span>
+        <span class="ri-main">
+          <span class="ri-title">${esc(r.d)}</span>
+          <span class="ri-sub">${esc(r.tw.join('、'))}・${freqText(r)}</span>
+          ${m.hit ? `<span class="ri-hit">經過 ${esc(m.hit)}</span>` : ''}
+        </span></button>`;
+    }).join('') + NOTE;
+  }
+
+  function timesHtml(list, isToday) {
+    if (!list.length) return `<p class="none">這天沒有班次</p>`;
+    let nextDone = false;
+    const over = isToday && list.every(t => toMin(t) < nowMin);
+    return (over ? `<p class="none">今天的班次已經跑完</p>` : '') + `<div class="times">${list.map(t => {
+      let cls = 't', extra = '';
+      if (isToday) {
+        if (toMin(t) < nowMin) cls += ' past';
+        else if (!nextDone) { cls += ' next'; extra = '<em>下一班</em>'; nextDone = true; }
+      }
+      return `<span class="${cls}">${esc(t)}${extra}</span>`;
+    }).join('')}</div>`;
+  }
+
+  function renderDetail() {
+    const r = state.sel, k = state.dir;
+    const stops = r.st[k];
+    const dirBtns = r.dirs.map(d => `<button data-dir="${d}" aria-pressed="${d === k}"><span class="dot" style="background:var(${d === 0 ? '--go' : '--back'})"></span>${esc(towardLabel(r, d))}</button>`).join('');
+    const dayBtns = [['wk', '平日'], ['we', '假日']].map(([v, l]) => `<button data-day="${v}" aria-pressed="${state.day === v}">${l}${v === todayType ? '（今天）' : ''}</button>`).join('');
+    detailEl.innerHTML = `
+      <div class="d-top">
+        <button class="back" data-back>← 全部路線</button>
+        <div class="d-title">
+          <span class="badge big c-${r.c}">${esc(r.n)}</span>
+          <div><h2>${esc(r.d)}</h2><p>${esc(r.a)} ${r.dirs.length > 1 ? '⇄' : '→'} ${esc(r.b)}</p></div>
+        </div>
+        <dl class="facts">
+          <dt>類別</dt><dd>${CAT[r.c].name}</dd>
+          <dt>行經</dt><dd>${esc(r.tw.join('、'))}</dd>
+          <dt>營運</dt><dd>${esc(r.op)}${r.tel ? `<br><span class="tel">${esc(r.tel)}</span>` : ''}</dd>
+          <dt>班次</dt><dd>${freqText(r)}</dd>
+        </dl>
+        <p class="livebar" id="livebar" role="status">即時動態讀取中…</p>
+        <a class="live" href="https://ebus.tycg.gov.tw/ebus/driving-map/${encodeURIComponent(r.id)}" target="_blank" rel="noopener">在桃園公車動態網開啟 ↗</a>
+      </div>
+      ${r.dirs.length > 1 ? `<div class="sec"><div class="seg" role="group" aria-label="方向">${dirBtns}</div></div>` : ''}
+      <section class="sec">
+        <h3>起點發車時刻 <span class="seg" role="group" aria-label="平日或假日">${dayBtns}</span></h3>
+        ${timesHtml(r[state.day][k] || [], state.day === todayType)}
+      </section>
+      <section class="sec" style="--stopc:var(${k === 0 ? '--go' : '--back'})">
+        <h3>停靠站・${stops.length} 站</h3>
+        <ol class="stoplist">${stops.map(([n, la, lo, sid], i) => {
+          const st = nearStations(la, lo).map(s => `<span class="tag ${s[3] === 'mrt' ? 'mrt' : 'rail'}">轉 ${esc(s[0])}</span>`).join('');
+          const also = r.gid[k][i].routes.size - 1;
+          return `<li><button data-stop="${i}"><span class="sn">${i + 1}</span><span class="sbody"><span class="sname">${esc(n)}</span>${st}${also ? `<span class="tag">+${also} 條小巴</span>` : ''}<span class="eta-slot" data-eta="${sid}:${k + 1}"></span></span></button></li>`;
+        }).join('')}</ol>
+      </section>` + NOTE;
+    renderLive();
+  }
+
+  function showDetail(on) {
+    listEl.hidden = on; detailEl.hidden = !on; controlsEl.hidden = on;
+  }
+
+  function fitSel() {
+    const r = state.sel;
+    const pts = r.dirs.flatMap(k => r.shp[k].length ? r.shp[k] : r.st[k].map(s => [s[1], s[2]]));
+    if (pts.length) map.fitBounds(boundsOf(pts), { padding: 28, maxZoom: 15, duration: reduceMotion ? 0 : 600 });
+  }
+
+  function closeStopView() {
+    state.stopView = false; setFocus(null); setStopHi(null); liveStop = null; pollLive();
+    if (state.sel) { renderDetail(); detailEl.scrollTop = 0; } else showDetail(false);
+  }
+
+  function select(id, fit = true) {
+    const r = byId[id]; if (!r) return;
+    state.sel = r; state.dir = r.dirs[0] ?? 0; state.day = todayType; state.stopView = false;
+    closePopup(); setFocus(null); hi = [];
+    renderDetail(); showDetail(true); detailEl.scrollTop = 0;
+    updateLines(); drawSel();
+    if (fit) fitSel();
+    liveStop = null; pollLive();
+    try { history.replaceState(null, '', '#r' + r.id); } catch (e) {}
+  }
+
+  function clearSel() {
+    state.sel = null; state.stopView = false; closePopup(); setFocus(null); hi = [];
+    drawSel(); updateLines(); renderList(); showDetail(false);
+    liveStop = null; pollLive();
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  }
+
+  // ---------- events ----------
+  listEl.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) select(b.dataset.id); });
+  detailEl.addEventListener('click', e => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.dataset.go) return select(t.dataset.go);
+    if (t.hasAttribute('data-back-stop')) return closeStopView();
+    if (t.hasAttribute('data-back')) return clearSel();
+    if (t.dataset.dir !== undefined) { state.dir = Number(t.dataset.dir); renderDetail(); drawSel(); return; }
+    if (t.dataset.day) { state.day = t.dataset.day; renderDetail(); return; }
+    if (t.dataset.stop !== undefined) {
+      const i = Number(t.dataset.stop), k = state.dir, r = state.sel, s = r.st[k][i];
+      openStop(r.gid[k][i], { r, k, i });
+      map.flyTo({ center: [s[2], s[1]], zoom: Math.max(map.getZoom(), 15), duration: reduceMotion ? 0 : 600 });
+    }
+  });
+  document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+    state.cats[b.dataset.cat] = !state.cats[b.dataset.cat]; saveFilters(); renderList(); updateLines();
+  }));
+  const townSel = $('town');
+  B.labels.map(l => l[0].replace(/區$/, '')).sort((a, b) => a.localeCompare(b, 'zh-Hant')).forEach(t => {
+    const o = document.createElement('option'); o.value = t; o.textContent = t + '區'; townSel.appendChild(o);
+  });
+  townSel.value = state.town;
+  townSel.addEventListener('change', () => {
+    state.town = townSel.value; saveFilters(); renderList(); updateLines();
+    const pts = R.filter(shown).flatMap(r => r.shp.flat());
+    if (state.town && pts.length) map.fitBounds(boundsOf(pts), { padding: 20, duration: reduceMotion ? 0 : 600 });
+  });
+  let qTimer;
+  $('q').addEventListener('input', e => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => { state.q = e.target.value; renderList(); updateLines(); }, 120);
+  });
+
+  const restyle = () => {
+    hi = hi.map((h, i) => ({ id: h.id, color: tok(HI_TOKENS[i % HI_TOKENS.length]) }));
+    if (map) map.setStyle(buildStyle());
+  };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', restyle);
+  new MutationObserver(restyle).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- boot ----------
+  renderList();
+  initMap();
+  const h = (location.hash || '').match(/^#r(\d+)$/);
+  if (h && byId[h[1]]) select(h[1]);
+})();
+</script>
+</body>
+</html>
